@@ -192,7 +192,26 @@ internal sealed class ModRepository(string dbPath) {
         transaction.Commit();
     }
 
-    public IReadOnlyList<SearchEmbeddingRow> ReadSearchEmbeddingRows(string model) {
+    public bool HasSearchVectors(string model) {
+        EnsureDbDirectory();
+
+        using var connection = OpenConnection();
+        CreateSchema(connection);
+        CreateEmbeddingSchema(connection);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+                              select exists(
+                                select 1
+                                from mod_embeddings
+                                where model = $model
+                              )
+                              """;
+        command.Parameters.AddWithValue("$model", model);
+        return (long)command.ExecuteScalar()! == 1;
+    }
+
+    public IEnumerable<SearchVectorRow> ReadSearchVectorRows(string model) {
         EnsureDbDirectory();
 
         using var connection = OpenConnection();
@@ -202,33 +221,61 @@ internal sealed class ModRepository(string dbPath) {
         using var command = connection.CreateCommand();
         command.CommandText = """
                               select
-                                mods.publishedfileid,
-                                mods.title,
-                                mods.description,
-                                mods.preview_url,
-                                mods.subscriptions,
-                                mods.views,
+                                mod_embeddings.mod_id,
                                 mod_embeddings.dimension,
                                 mod_embeddings.embedding
                               from mod_embeddings
-                              join mods on mods.id = mod_embeddings.mod_id
                               where mod_embeddings.model = $model
-                              order by mods.id
+                              order by mod_embeddings.mod_id
                               """;
         command.Parameters.AddWithValue("$model", model);
 
         using var reader = command.ExecuteReader();
-        var rows = new List<SearchEmbeddingRow>();
         while (reader.Read()) {
-            rows.Add(new SearchEmbeddingRow(
-                reader.GetString(0),
+            yield return new SearchVectorRow(
+                reader.GetInt32(0),
+                reader.GetInt32(1),
+                (byte[])reader["embedding"]);
+        }
+    }
+
+    public IReadOnlyDictionary<int, SearchModRow> ReadSearchModRows(IEnumerable<int> ids) {
+        EnsureDbDirectory();
+
+        using var connection = OpenConnection();
+        CreateSchema(connection);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+                              select
+                                id,
+                                publishedfileid,
+                                title,
+                                description,
+                                preview_url,
+                                subscriptions,
+                                views
+                              from mods
+                              where id = $id
+                              """;
+        command.Parameters.Add("$id", SqliteType.Integer);
+
+        var rows = new Dictionary<int, SearchModRow>();
+        foreach (var id in ids) {
+            command.Parameters["$id"].Value = id;
+            using var reader = command.ExecuteReader();
+            if (!reader.Read()) {
+                throw new InvalidDataException($"Missing mod row for embedding mod_id {id}");
+            }
+
+            rows.Add(id, new SearchModRow(
+                reader.GetInt32(0),
                 reader.GetString(1),
                 reader.GetString(2),
                 reader.GetString(3),
-                reader.GetInt64(4),
+                reader.GetString(4),
                 reader.GetInt64(5),
-                reader.GetInt32(6),
-                (byte[])reader["embedding"]));
+                reader.GetInt64(6)));
         }
 
         return rows;

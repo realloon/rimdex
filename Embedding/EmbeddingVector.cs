@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 
 namespace Rimdex.Embedding;
 
@@ -41,6 +42,10 @@ internal static class EmbeddingVector {
     }
 
     public static float CosineDistance(byte[] embedding, int dimension, float[] query) {
+        if (!BitConverter.IsLittleEndian) {
+            throw new NotSupportedException("Stored embeddings require a little-endian CPU");
+        }
+
         if (dimension != query.Length) {
             throw new InvalidDataException(
                 $"Stored embedding dimension {dimension} does not match query dimension {query.Length}");
@@ -51,9 +56,9 @@ internal static class EmbeddingVector {
         }
 
         var dot = 0f;
+        var values = MemoryMarshal.Cast<byte, float>(embedding);
         for (var i = 0; i < dimension; i++) {
-            var value = BinaryPrimitives.ReadSingleLittleEndian(embedding.AsSpan(i * sizeof(float), sizeof(float)));
-            dot += value * query[i];
+            dot += values[i] * query[i];
         }
 
         return 1 - dot;

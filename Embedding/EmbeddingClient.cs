@@ -18,9 +18,8 @@ internal sealed class EmbeddingClient(HttpClient httpClient) {
             new EmbeddingRequest(config.Model, input.ToArray()),
             RimdexJsonContext.Default.EmbeddingRequest);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, url) {
-            Content = new StringContent(body, Encoding.UTF8, "application/json")
-        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -47,7 +46,7 @@ internal sealed class EmbeddingClient(HttpClient httpClient) {
                 $"Embedding API returned {response.Data.Length} vectors for {expectedCount} inputs");
         }
 
-        var vectors = new float[expectedCount][];
+        var vectors = new float[]?[expectedCount];
         foreach (var item in response.Data) {
             if (item.Index is null) {
                 throw new InvalidDataException("Embedding API response item is missing index");
@@ -69,10 +68,9 @@ internal sealed class EmbeddingClient(HttpClient httpClient) {
             vectors[index] = item.Embedding;
         }
 
-        if (vectors.Any(vector => vector is null)) {
-            throw new InvalidDataException("Embedding API response is missing one or more indexes");
-        }
-
-        return vectors!;
+        return vectors
+            .Select(vector =>
+                vector ?? throw new InvalidDataException("Embedding API response is missing one or more indexes"))
+            .ToArray();
     }
 }

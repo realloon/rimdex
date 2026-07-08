@@ -13,5 +13,10 @@ internal readonly record struct SearchOptions(string Query, int Limit, int Candi
         if (Candidates <= 0) {
             throw new ArgumentOutOfRangeException(nameof(Candidates), "candidates must be positive");
         }
+
+        if (Candidates < Limit) {
+            throw new ArgumentOutOfRangeException(nameof(Candidates),
+                "candidates must be greater than or equal to limit");
+        }
     }
 }

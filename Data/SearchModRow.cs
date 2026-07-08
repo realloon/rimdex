@@ -1,11 +1,10 @@
 namespace Rimdex.Data;
 
-internal sealed record SearchEmbeddingRow(
+internal sealed record SearchModRow(
+    int Id,
     string PublishedFileId,
     string Title,
     string Description,
     string PreviewUrl,
     long Subscriptions,
-    long Views,
-    int Dimension,
-    byte[] Embedding);
+    long Views);

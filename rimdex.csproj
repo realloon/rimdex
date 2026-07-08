@@ -41,4 +41,8 @@
         <NativeLibrary Include="$(SqliteNativeLibrary)" Visible="false" />
     </ItemGroup>
 
+    <ItemGroup>
+      <None Remove=".gitignore" />
+    </ItemGroup>
+
 </Project>
