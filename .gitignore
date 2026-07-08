@@ -1,0 +1,7 @@
+.DS_Store/
+
+.idea/.idea.rimdex/.idea/projectSettingsUpdater.xml
+.idea/.idea.rimdex/.idea/workspace.xml
+
+bin/
+obj/
