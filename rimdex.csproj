@@ -8,14 +8,36 @@
         <Nullable>enable</Nullable>
         <PublishAot>true</PublishAot>
         <InvariantGlobalization>true</InvariantGlobalization>
+        <DebugType>none</DebugType>
+        <DebugSymbols>false</DebugSymbols>
     </PropertyGroup>
 
     <ItemGroup>
-      <None Remove=".gitignore" />
+        <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.9" />
+        <PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.3" />
+        <PackageReference Include="SourceGear.sqlite3" Version="3.50.4.5" PrivateAssets="all" />
     </ItemGroup>
 
+    <PropertyGroup>
+        <SqliteVersion>3530100</SqliteVersion>
+        <SqliteUrl>https://sqlite.org/2026/sqlite-amalgamation-$(SqliteVersion).zip</SqliteUrl>
+        <SqliteZipFile>$([System.IO.Path]::GetFileName('$(SqliteUrl)'))</SqliteZipFile>
+        <SqliteZipPath>$([System.IO.Path]::Combine($(BaseIntermediateOutputPath),$(SqliteZipFile)))</SqliteZipPath>
+        <SqliteSrcDirectory>$([System.IO.Path]::Combine($(BaseIntermediateOutputPath),$(SqliteZipFile.Split('.')[0])))</SqliteSrcDirectory>
+        <SqliteObjectFile>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'sqlite3.o'))</SqliteObjectFile>
+        <SqliteNativeLibrary>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'libsqlite3.a'))</SqliteNativeLibrary>
+    </PropertyGroup>
+
+    <Target Name="BuildSqlite" BeforeTargets="LinkNative" Condition="!Exists($(SqliteNativeLibrary))">
+        <DownloadFile SourceUrl="$(SqliteUrl)" DestinationFolder="$(BaseIntermediateOutputPath)" Condition="!Exists($(SqliteZipPath))" />
+        <Unzip SourceFiles="$(SqliteZipPath)" DestinationFolder="$(BaseIntermediateOutputPath)" Condition="!Exists($(SqliteSrcDirectory))" />
+        <Exec Command="clang -O2 -fPIC -c sqlite3.c -o sqlite3.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="!Exists($(SqliteObjectFile))" />
+        <Exec Command="ar rcs libsqlite3.a sqlite3.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="!Exists($(SqliteNativeLibrary))" />
+    </Target>
+
     <ItemGroup>
-      <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+        <DirectPInvoke Include="e_sqlite3" Visible="false" />
+        <NativeLibrary Include="$(SqliteNativeLibrary)" Visible="false" />
     </ItemGroup>
 
 </Project>
