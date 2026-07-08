@@ -151,28 +151,24 @@ internal sealed class ModRepository(string dbPath) {
                                 model,
                                 dimension,
                                 search_text_hash,
-                                embedding,
                                 embedded_at
                               ) values (
                                 $mod_id,
                                 $model,
                                 $dimension,
                                 $search_text_hash,
-                                $embedding,
                                 $embedded_at
                               )
                               on conflict(mod_id) do update set
                                 model = excluded.model,
                                 dimension = excluded.dimension,
                                 search_text_hash = excluded.search_text_hash,
-                                embedding = excluded.embedding,
                                 embedded_at = excluded.embedded_at
                               """;
         command.Parameters.Add("$mod_id", SqliteType.Integer);
         command.Parameters.Add("$model", SqliteType.Text);
         command.Parameters.Add("$dimension", SqliteType.Integer);
         command.Parameters.Add("$search_text_hash", SqliteType.Text);
-        command.Parameters.Add("$embedding", SqliteType.Blob);
         command.Parameters.Add("$embedded_at", SqliteType.Text);
 
         using var vectorCommand = connection.CreateCommand();
@@ -194,7 +190,6 @@ internal sealed class ModRepository(string dbPath) {
             command.Parameters["$model"].Value = model;
             command.Parameters["$dimension"].Value = embedding.Dimension;
             command.Parameters["$search_text_hash"].Value = embedding.SearchTextHash;
-            command.Parameters["$embedding"].Value = embedding.Embedding;
             command.Parameters["$embedded_at"].Value = embeddedAt;
             command.ExecuteNonQuery();
 
@@ -260,7 +255,7 @@ internal sealed class ModRepository(string dbPath) {
                 reader.GetString(4),
                 reader.GetInt64(5),
                 reader.GetInt64(6),
-                reader.GetFloat(7)));
+                (float)reader.GetDouble(7)));
         }
 
         return rows;
@@ -309,7 +304,6 @@ internal sealed class ModRepository(string dbPath) {
                               model text not null,
                               dimension integer not null,
                               search_text_hash text not null,
-                              embedding blob not null,
                               embedded_at text not null
                             )
                             """);
@@ -328,18 +322,11 @@ internal sealed class ModRepository(string dbPath) {
             throw new InvalidOperationException($"No embeddings found for model: {model}");
         }
 
-        var created = CreateVectorSchema(connection, model, dimension.Value);
-        if (created) {
-            using var command = connection.CreateCommand();
-            command.CommandText = """
-                                  insert into mod_embedding_vectors(rowid, embedding)
-                                  select mod_id, embedding
-                                  from mod_embeddings
-                                  where model = $model
-                                  """;
-            command.Parameters.AddWithValue("$model", model);
-            command.ExecuteNonQuery();
+        if (!TableExists(connection, "mod_embedding_vectors")) {
+            throw new InvalidOperationException("Missing vector index. Run rimdex embed.");
         }
+
+        ValidateVectorMetadata(connection, model, dimension.Value);
 
         var metadataRows = Count(connection, "mod_embeddings", "model", model);
         var vectorRows = Count(connection, "mod_embedding_vectors");
@@ -349,10 +336,10 @@ internal sealed class ModRepository(string dbPath) {
         }
     }
 
-    private static bool CreateVectorSchema(SqliteConnection connection, string model, int dimension) {
+    private static void CreateVectorSchema(SqliteConnection connection, string model, int dimension) {
         if (TableExists(connection, "mod_embedding_vectors")) {
             ValidateVectorMetadata(connection, model, dimension);
-            return false;
+            return;
         }
 
         Execute(connection, $"""
@@ -363,7 +350,6 @@ internal sealed class ModRepository(string dbPath) {
 
         InsertVectorMetadata(connection, "model", model);
         InsertVectorMetadata(connection, "dimension", dimension.ToString());
-        return true;
     }
 
     private static void ValidateVectorMetadata(SqliteConnection connection, string model, int dimension) {
@@ -408,7 +394,7 @@ internal sealed class ModRepository(string dbPath) {
     private static void InsertVectorMetadata(SqliteConnection connection, string key, string value) {
         using var command = connection.CreateCommand();
         command.CommandText = """
-                              insert into mod_embedding_vector_metadata(key, value)
+                              insert or replace into mod_embedding_vector_metadata(key, value)
                               values ($key, $value)
                               """;
         command.Parameters.AddWithValue("$key", key);
