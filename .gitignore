@@ -2,6 +2,10 @@
 
 .idea/.idea.rimdex/.idea/projectSettingsUpdater.xml
 .idea/.idea.rimdex/.idea/workspace.xml
+.idea/.idea.rimdex/.idea/dataSources.local.xml
+.idea/.idea.rimdex/.idea/dataSources.xml
+.idea/.idea.rimdex/.idea/dataSources/
 
 bin/
 obj/
+data/

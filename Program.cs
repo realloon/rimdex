@@ -1,1 +1,3 @@
-﻿Console.WriteLine("Hello, World!");
+﻿using Rimdex.Cli;
+
+return await RimdexCommand.RunAsync(args);
