@@ -4,7 +4,14 @@ using Rimdex.Serialization;
 
 namespace Rimdex.Configuration;
 
-internal sealed record RimdexConfig(EmbeddingConfig Embedding) {
+internal sealed record RimdexConfig(string ApiKey, string BaseUrl, string Model) {
+    public Uri BaseUri {
+        get {
+            var normalized = BaseUrl.EndsWith("/", StringComparison.Ordinal) ? BaseUrl : $"{BaseUrl}/";
+            return new Uri(normalized, UriKind.Absolute);
+        }
+    }
+
     public static RimdexConfig Load() {
         var path = AppPaths.ConfigPath;
         if (!File.Exists(path)) {
@@ -19,11 +26,33 @@ internal sealed record RimdexConfig(EmbeddingConfig Embedding) {
         return config;
     }
 
+    public void Save() {
+        var path = AppPaths.ConfigPath;
+        Validate(path);
+
+        var directory = Path.GetDirectoryName(path)
+                        ?? throw new InvalidOperationException($"Invalid config path: {path}");
+        Directory.CreateDirectory(directory);
+
+        var json = JsonSerializer.Serialize(this, RimdexJsonContext.Default.RimdexConfig);
+        File.WriteAllText(path, $"{json}{Environment.NewLine}");
+    }
+
     private void Validate(string path) {
-        if (Embedding is null) {
-            throw new InvalidDataException($"Missing embedding config in {path}");
+        if (string.IsNullOrWhiteSpace(ApiKey)) {
+            throw new InvalidDataException($"Missing apiKey in {path}");
         }
 
-        Embedding.Validate(path);
+        if (string.IsNullOrWhiteSpace(BaseUrl)) {
+            throw new InvalidDataException($"Missing baseUrl in {path}");
+        }
+
+        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out _)) {
+            throw new InvalidDataException($"Invalid baseUrl in {path}");
+        }
+
+        if (string.IsNullOrWhiteSpace(Model)) {
+            throw new InvalidDataException($"Missing model in {path}");
+        }
     }
 }
