@@ -1,6 +1,7 @@
 using System.CommandLine;
 using Rimdex.Configuration;
 using Rimdex.Data;
+using Rimdex.Embedding;
 using Rimdex.Importing;
 using Rimdex.Platform;
 
@@ -16,6 +17,7 @@ internal static class RimdexCommand {
     private static RootCommand CreateRootCommand() {
         var root = new RootCommand("RimWorld Workshop mod index and semantic search CLI");
         root.Subcommands.Add(CreateConfigCommand());
+        root.Subcommands.Add(CreateEmbedCommand());
         root.Subcommands.Add(CreateImportCommand());
         root.Subcommands.Add(CreateStatsCommand());
         return root;
@@ -49,6 +51,25 @@ internal static class RimdexCommand {
             parseResult.GetRequiredValue(apiKey),
             parseResult.GetRequiredValue(baseUrl),
             parseResult.GetRequiredValue(model))));
+        return command;
+    }
+
+    private static Command CreateEmbedCommand() {
+        var limit = new Option<int>("--limit") {
+            Description = "Maximum mods to embed.",
+            DefaultValueFactory = _ => 100
+        };
+        var batchSize = new Option<int>("--batch-size") {
+            Description = "Embedding API batch size.",
+            DefaultValueFactory = _ => 16
+        };
+
+        var command = new Command("embed", "Embed imported mods.");
+        command.Options.Add(limit);
+        command.Options.Add(batchSize);
+        command.SetAction(parseResult => RunAsync(() => EmbedAsync(new EmbedOptions(
+            parseResult.GetRequiredValue(limit),
+            parseResult.GetRequiredValue(batchSize)))));
         return command;
     }
 
@@ -92,6 +113,10 @@ internal static class RimdexCommand {
         config.Save();
         Console.WriteLine($"wrote config to {AppPaths.ConfigPath}");
         return 0;
+    }
+
+    private static async Task<int> EmbedAsync(EmbedOptions options) {
+        return await EmbeddingService.Create().EmbedAsync(options, CancellationToken.None);
     }
 
     private static async Task<int> ImportAsync(string detailsDir) {
