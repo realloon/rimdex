@@ -4,7 +4,7 @@ using Rimdex.Data;
 namespace Rimdex.Search;
 
 internal static partial class SearchRanker {
-    public static SearchResult Rank(SearchModRow row, string query, float distance) {
+    public static SearchResult Rank(SearchCandidateRow row, string query) {
         var terms = QueryTerms(query);
         var text = $"{row.Title}\n{row.Description}".ToLowerInvariant();
         var title = row.Title.ToLowerInvariant();
@@ -18,8 +18,8 @@ internal static partial class SearchRanker {
 
         return new SearchResult(
             row,
-            distance,
-            distance - popularityBoost - lexicalBoost + translationPenalty);
+            row.Distance,
+            row.Distance - popularityBoost - lexicalBoost + translationPenalty);
     }
 
     public static string Summarize(string value) {
@@ -36,7 +36,7 @@ internal static partial class SearchRanker {
             .ToList();
     }
 
-    private static bool IsLikelyTranslation(SearchModRow row) {
+    private static bool IsLikelyTranslation(SearchCandidateRow row) {
         var title = row.Title.ToLowerInvariant();
         return TranslationTerms().Any(title.Contains);
     }

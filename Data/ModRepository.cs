@@ -140,6 +140,7 @@ internal sealed class ModRepository(string dbPath) {
         CreateSchema(connection);
         CreateEmbeddingSchema(connection);
         ValidateEmbeddingDimension(connection, model, embeddings[0].Dimension);
+        CreateVectorSchema(connection, model, embeddings[0].Dimension);
 
         using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
@@ -174,6 +175,15 @@ internal sealed class ModRepository(string dbPath) {
         command.Parameters.Add("$embedding", SqliteType.Blob);
         command.Parameters.Add("$embedded_at", SqliteType.Text);
 
+        using var vectorCommand = connection.CreateCommand();
+        vectorCommand.Transaction = transaction;
+        vectorCommand.CommandText = """
+                                    insert or replace into mod_embedding_vectors(rowid, embedding)
+                                    values ($mod_id, $embedding)
+                                    """;
+        vectorCommand.Parameters.Add("$mod_id", SqliteType.Integer);
+        vectorCommand.Parameters.Add("$embedding", SqliteType.Blob);
+
         var embeddedAt = DateTimeOffset.UtcNow.ToString("O");
         foreach (var embedding in embeddings) {
             if (embedding.Dimension != embeddings[0].Dimension) {
@@ -187,31 +197,25 @@ internal sealed class ModRepository(string dbPath) {
             command.Parameters["$embedding"].Value = embedding.Embedding;
             command.Parameters["$embedded_at"].Value = embeddedAt;
             command.ExecuteNonQuery();
+
+            vectorCommand.Parameters["$mod_id"].Value = embedding.ModId;
+            vectorCommand.Parameters["$embedding"].Value = embedding.Embedding;
+            vectorCommand.ExecuteNonQuery();
         }
 
         transaction.Commit();
     }
 
-    public bool HasSearchVectors(string model) {
+    public void EnsureSearchIndex(string model) {
         EnsureDbDirectory();
 
         using var connection = OpenConnection();
         CreateSchema(connection);
         CreateEmbeddingSchema(connection);
-
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-                              select exists(
-                                select 1
-                                from mod_embeddings
-                                where model = $model
-                              )
-                              """;
-        command.Parameters.AddWithValue("$model", model);
-        return (long)command.ExecuteScalar()! == 1;
+        EnsureVectorIndex(connection, model);
     }
 
-    public IEnumerable<SearchVectorRow> ReadSearchVectorRows(string model) {
+    public IReadOnlyList<SearchCandidateRow> SearchCandidates(string model, byte[] queryEmbedding, int candidates) {
         EnsureDbDirectory();
 
         using var connection = OpenConnection();
@@ -220,62 +224,43 @@ internal sealed class ModRepository(string dbPath) {
 
         using var command = connection.CreateCommand();
         command.CommandText = """
+                              with matches as (
+                                select rowid, distance
+                                from mod_embedding_vectors
+                                where embedding match $query
+                                  and k = $candidates
+                              )
                               select
-                                mod_embeddings.mod_id,
-                                mod_embeddings.dimension,
-                                mod_embeddings.embedding
-                              from mod_embeddings
+                                mods.id,
+                                mods.publishedfileid,
+                                mods.title,
+                                mods.description,
+                                mods.preview_url,
+                                mods.subscriptions,
+                                mods.views,
+                                matches.distance
+                              from matches
+                              join mods on mods.id = matches.rowid
+                              join mod_embeddings on mod_embeddings.mod_id = mods.id
                               where mod_embeddings.model = $model
-                              order by mod_embeddings.mod_id
+                              order by matches.distance
                               """;
         command.Parameters.AddWithValue("$model", model);
+        command.Parameters.AddWithValue("$query", queryEmbedding);
+        command.Parameters.AddWithValue("$candidates", candidates);
 
         using var reader = command.ExecuteReader();
+        var rows = new List<SearchCandidateRow>();
         while (reader.Read()) {
-            yield return new SearchVectorRow(
-                reader.GetInt32(0),
-                reader.GetInt32(1),
-                (byte[])reader["embedding"]);
-        }
-    }
-
-    public IReadOnlyDictionary<int, SearchModRow> ReadSearchModRows(IEnumerable<int> ids) {
-        EnsureDbDirectory();
-
-        using var connection = OpenConnection();
-        CreateSchema(connection);
-
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-                              select
-                                id,
-                                publishedfileid,
-                                title,
-                                description,
-                                preview_url,
-                                subscriptions,
-                                views
-                              from mods
-                              where id = $id
-                              """;
-        command.Parameters.Add("$id", SqliteType.Integer);
-
-        var rows = new Dictionary<int, SearchModRow>();
-        foreach (var id in ids) {
-            command.Parameters["$id"].Value = id;
-            using var reader = command.ExecuteReader();
-            if (!reader.Read()) {
-                throw new InvalidDataException($"Missing mod row for embedding mod_id {id}");
-            }
-
-            rows.Add(id, new SearchModRow(
+            rows.Add(new SearchCandidateRow(
                 reader.GetInt32(0),
                 reader.GetString(1),
                 reader.GetString(2),
                 reader.GetString(3),
                 reader.GetString(4),
                 reader.GetInt64(5),
-                reader.GetInt64(6)));
+                reader.GetInt64(6),
+                reader.GetFloat(7)));
         }
 
         return rows;
@@ -288,6 +273,7 @@ internal sealed class ModRepository(string dbPath) {
         var connection = new SqliteConnection(builder.ToString());
 
         connection.Open();
+        SqliteVec.Register(connection);
         Execute(connection, "pragma journal_mode = wal");
         Execute(connection, "pragma foreign_keys = on");
         return connection;
@@ -328,6 +314,106 @@ internal sealed class ModRepository(string dbPath) {
                             )
                             """);
         Execute(connection, "create index if not exists mod_embeddings_model_idx on mod_embeddings(model)");
+        Execute(connection, """
+                            create table if not exists mod_embedding_vector_metadata (
+                              key text primary key,
+                              value text not null
+                            )
+                            """);
+    }
+
+    private static void EnsureVectorIndex(SqliteConnection connection, string model) {
+        var dimension = ReadStoredEmbeddingDimension(connection, model);
+        if (dimension is null) {
+            throw new InvalidOperationException($"No embeddings found for model: {model}");
+        }
+
+        var created = CreateVectorSchema(connection, model, dimension.Value);
+        if (created) {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                                  insert into mod_embedding_vectors(rowid, embedding)
+                                  select mod_id, embedding
+                                  from mod_embeddings
+                                  where model = $model
+                                  """;
+            command.Parameters.AddWithValue("$model", model);
+            command.ExecuteNonQuery();
+        }
+
+        var metadataRows = Count(connection, "mod_embeddings", "model", model);
+        var vectorRows = Count(connection, "mod_embedding_vectors");
+        if (metadataRows != vectorRows) {
+            throw new InvalidDataException(
+                $"Vector index row count {vectorRows} does not match embedding metadata row count {metadataRows}");
+        }
+    }
+
+    private static bool CreateVectorSchema(SqliteConnection connection, string model, int dimension) {
+        if (TableExists(connection, "mod_embedding_vectors")) {
+            ValidateVectorMetadata(connection, model, dimension);
+            return false;
+        }
+
+        Execute(connection, $"""
+                             create virtual table mod_embedding_vectors using vec0(
+                               embedding float[{dimension}] distance_metric=cosine
+                             )
+                             """);
+
+        InsertVectorMetadata(connection, "model", model);
+        InsertVectorMetadata(connection, "dimension", dimension.ToString());
+        return true;
+    }
+
+    private static void ValidateVectorMetadata(SqliteConnection connection, string model, int dimension) {
+        var storedModel = ReadVectorMetadata(connection, "model");
+        var storedDimension = ReadVectorMetadata(connection, "dimension");
+
+        if (storedModel != model) {
+            throw new InvalidDataException($"Vector index model {storedModel} does not match configured model {model}");
+        }
+
+        if (storedDimension != dimension.ToString()) {
+            throw new InvalidDataException(
+                $"Vector index dimension {storedDimension} does not match stored embedding dimension {dimension}");
+        }
+    }
+
+    private static int? ReadStoredEmbeddingDimension(SqliteConnection connection, string model) {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+                              select dimension
+                              from mod_embeddings
+                              where model = $model
+                              limit 1
+                              """;
+        command.Parameters.AddWithValue("$model", model);
+        var result = command.ExecuteScalar();
+        return result is null ? null : (int)(long)result;
+    }
+
+    private static string ReadVectorMetadata(SqliteConnection connection, string key) {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+                              select value
+                              from mod_embedding_vector_metadata
+                              where key = $key
+                              """;
+        command.Parameters.AddWithValue("$key", key);
+        return (string?)command.ExecuteScalar()
+               ?? throw new InvalidDataException($"Missing vector index metadata: {key}");
+    }
+
+    private static void InsertVectorMetadata(SqliteConnection connection, string key, string value) {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+                              insert into mod_embedding_vector_metadata(key, value)
+                              values ($key, $value)
+                              """;
+        command.Parameters.AddWithValue("$key", key);
+        command.Parameters.AddWithValue("$value", value);
+        command.ExecuteNonQuery();
     }
 
     private static void ValidateEmbeddingDimension(SqliteConnection connection, string model, int dimension) {
@@ -370,6 +456,13 @@ internal sealed class ModRepository(string dbPath) {
     private static long Count(SqliteConnection connection, string table) {
         using var command = connection.CreateCommand();
         command.CommandText = $"select count(*) from {table}";
+        return (long)command.ExecuteScalar()!;
+    }
+
+    private static long Count(SqliteConnection connection, string table, string column, string value) {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"select count(*) from {table} where {column} = $value";
+        command.Parameters.AddWithValue("$value", value);
         return (long)command.ExecuteScalar()!;
     }
 
