@@ -35,7 +35,7 @@ internal sealed class EmbeddingService(ModRepository repository, EmbeddingClient
             Console.WriteLine($"embedded {embedded}/{pending.Count}");
         }
 
-        return embedded;
+        return 0;
     }
 
     public static EmbeddingService Create() {

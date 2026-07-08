@@ -25,7 +25,7 @@ internal sealed class SearchService(ModRepository repository, EmbeddingClient cl
 
         PrintResults(results);
 
-        return results.Length;
+        return 0;
     }
 
     public static SearchService Create() {
