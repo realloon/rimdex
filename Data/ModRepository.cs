@@ -192,6 +192,48 @@ internal sealed class ModRepository(string dbPath) {
         transaction.Commit();
     }
 
+    public IReadOnlyList<SearchEmbeddingRow> ReadSearchEmbeddingRows(string model) {
+        EnsureDbDirectory();
+
+        using var connection = OpenConnection();
+        CreateSchema(connection);
+        CreateEmbeddingSchema(connection);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+                              select
+                                mods.publishedfileid,
+                                mods.title,
+                                mods.description,
+                                mods.preview_url,
+                                mods.subscriptions,
+                                mods.views,
+                                mod_embeddings.dimension,
+                                mod_embeddings.embedding
+                              from mod_embeddings
+                              join mods on mods.id = mod_embeddings.mod_id
+                              where mod_embeddings.model = $model
+                              order by mods.id
+                              """;
+        command.Parameters.AddWithValue("$model", model);
+
+        using var reader = command.ExecuteReader();
+        var rows = new List<SearchEmbeddingRow>();
+        while (reader.Read()) {
+            rows.Add(new SearchEmbeddingRow(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetInt64(4),
+                reader.GetInt64(5),
+                reader.GetInt32(6),
+                (byte[])reader["embedding"]));
+        }
+
+        return rows;
+    }
+
     private SqliteConnection OpenConnection() {
         var builder = new SqliteConnectionStringBuilder {
             DataSource = dbPath

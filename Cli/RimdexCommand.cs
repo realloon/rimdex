@@ -4,6 +4,7 @@ using Rimdex.Data;
 using Rimdex.Embedding;
 using Rimdex.Importing;
 using Rimdex.Platform;
+using Rimdex.Search;
 
 namespace Rimdex.Cli;
 
@@ -19,6 +20,7 @@ internal static class RimdexCommand {
         root.Subcommands.Add(CreateConfigCommand());
         root.Subcommands.Add(CreateEmbedCommand());
         root.Subcommands.Add(CreateImportCommand());
+        root.Subcommands.Add(CreateSearchCommand());
         root.Subcommands.Add(CreateStatsCommand());
         return root;
     }
@@ -73,6 +75,34 @@ internal static class RimdexCommand {
         return command;
     }
 
+    private static Command CreateSearchCommand() {
+        var query = new Argument<string>("query") {
+            Description = "Search query."
+        };
+        var limit = new Option<int>("--limit") {
+            Description = "Number of results.",
+            DefaultValueFactory = _ => 5
+        };
+        var candidates = new Option<int?>("--candidates") {
+            Description = "Vector candidates before reranking."
+        };
+
+        var command = new Command("search", "Semantic search imported mods.");
+        command.Arguments.Add(query);
+        command.Options.Add(limit);
+        command.Options.Add(candidates);
+        command.SetAction(parseResult => {
+            var resultLimit = parseResult.GetRequiredValue(limit);
+            var candidateCount = parseResult.GetValue(candidates) ?? Math.Max(50, resultLimit * 10);
+
+            return RunAsync(() => SearchAsync(new SearchOptions(
+                parseResult.GetRequiredValue(query),
+                resultLimit,
+                candidateCount)));
+        });
+        return command;
+    }
+
     private static Command CreateImportCommand() {
         var detailsDir = new Argument<string>("details-dir") {
             Description = "Directory containing crawled Workshop detail JSON files."
@@ -117,6 +147,10 @@ internal static class RimdexCommand {
 
     private static async Task<int> EmbedAsync(EmbedOptions options) {
         return await EmbeddingService.Create().EmbedAsync(options, CancellationToken.None);
+    }
+
+    private static async Task<int> SearchAsync(SearchOptions options) {
+        return await SearchService.Create().SearchAsync(options, CancellationToken.None);
     }
 
     private static async Task<int> ImportAsync(string detailsDir) {
