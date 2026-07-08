@@ -7,7 +7,7 @@ namespace Rimdex.Configuration;
 internal sealed record RimdexConfig(string ApiKey, string BaseUrl, string Model) {
     public Uri BaseUri {
         get {
-            var normalized = BaseUrl.EndsWith("/", StringComparison.Ordinal) ? BaseUrl : $"{BaseUrl}/";
+            var normalized = BaseUrl.EndsWith('/') ? BaseUrl : $"{BaseUrl}/";
             return new Uri(normalized, UriKind.Absolute);
         }
     }
