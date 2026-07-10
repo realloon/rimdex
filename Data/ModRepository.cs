@@ -219,11 +219,23 @@ internal sealed class ModRepository(string dbPath) {
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-                              with matches as (
+                              with eligible as (
+                                select mods.id
+                                from mods
+                                join mod_embeddings on mod_embeddings.mod_id = mods.id
+                                where mod_embeddings.model = $model
+                                  and not exists (
+                                    select 1
+                                    from json_each(mods.tags_json)
+                                    where json_each.value = 'Translation'
+                                  )
+                              ),
+                              matches as (
                                 select rowid, distance
                                 from mod_embedding_vectors
                                 where embedding match $query
                                   and k = $candidates
+                                  and rowid in (select id from eligible)
                               )
                               select
                                 mods.id,
@@ -236,8 +248,7 @@ internal sealed class ModRepository(string dbPath) {
                                 matches.distance
                               from matches
                               join mods on mods.id = matches.rowid
-                              join mod_embeddings on mod_embeddings.mod_id = mods.id
-                              where mod_embeddings.model = $model
+                              join eligible on eligible.id = mods.id
                               order by matches.distance
                               """;
         command.Parameters.AddWithValue("$model", model);
