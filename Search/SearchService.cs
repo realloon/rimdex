@@ -42,9 +42,7 @@ internal sealed class SearchService(ModRepository repository, EmbeddingClient cl
                 SearchRanker.Summarize(result.Row.Description),
                 result.Row.PreviewUrl,
                 result.Row.Subscriptions,
-                result.Row.Views,
-                result.Distance,
-                result.RankScore))
+                result.Row.Views))
             .ToArray();
 
         Console.WriteLine(JsonSerializer.Serialize(dto, RimdexIndentedJsonContext.Default.SearchResultDtoArray));

@@ -6,6 +6,4 @@ internal sealed record SearchResultDto(
     string Summary,
     string PreviewUrl,
     long Subscriptions,
-    long Views,
-    float Distance,
-    double RankScore);
+    long Views);
