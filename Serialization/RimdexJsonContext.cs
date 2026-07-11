@@ -1,3 +1,5 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Rimdex.Configuration;
 using Rimdex.Embedding;
@@ -15,4 +17,10 @@ internal sealed partial class RimdexJsonContext : JsonSerializerContext;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(SearchResultDto[]))]
-internal sealed partial class RimdexIndentedJsonContext : JsonSerializerContext;
+internal sealed partial class RimdexIndentedJsonContext : JsonSerializerContext {
+    public static RimdexIndentedJsonContext Console { get; } = new(new JsonSerializerOptions {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    });
+}

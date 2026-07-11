@@ -45,6 +45,6 @@ internal sealed class SearchService(ModRepository repository, EmbeddingClient cl
                 result.Row.Views))
             .ToArray();
 
-        Console.WriteLine(JsonSerializer.Serialize(dto, RimdexIndentedJsonContext.Default.SearchResultDtoArray));
+        Console.WriteLine(JsonSerializer.Serialize(dto, RimdexIndentedJsonContext.Console.SearchResultDtoArray));
     }
 }
