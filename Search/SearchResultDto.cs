@@ -1,7 +1,7 @@
 namespace Rimdex.Search;
 
 internal sealed record SearchResultDto(
-    string PublishedFileId,
+    string Url,
     string Title,
     string Summary,
     string PreviewUrl,

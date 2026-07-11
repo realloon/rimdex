@@ -37,7 +37,7 @@ internal sealed class SearchService(ModRepository repository, EmbeddingClient cl
     private static void PrintResults(IReadOnlyList<SearchResult> results) {
         var dto = results
             .Select(result => new SearchResultDto(
-                result.Row.PublishedFileId,
+                $"https://steamcommunity.com/sharedfiles/filedetails/?id={result.Row.PublishedFileId}",
                 result.Row.Title,
                 SearchRanker.Summarize(result.Row.Description),
                 result.Row.PreviewUrl,
