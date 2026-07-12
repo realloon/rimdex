@@ -29,13 +29,22 @@
         <SqliteZipFile>$([System.IO.Path]::GetFileName('$(SqliteUrl)'))</SqliteZipFile>
         <SqliteZipPath>$([System.IO.Path]::Combine($(BaseIntermediateOutputPath),$(SqliteZipFile)))</SqliteZipPath>
         <SqliteSrcDirectory>$([System.IO.Path]::Combine($(BaseIntermediateOutputPath),$(SqliteZipFile.Split('.')[0])))</SqliteSrcDirectory>
-        <SqliteObjectFile>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'sqlite3.o'))</SqliteObjectFile>
         <SqliteVecVersion>0.1.9</SqliteVecVersion>
         <SqliteVecUrl>https://github.com/asg017/sqlite-vec/releases/download/v$(SqliteVecVersion)/sqlite-vec-$(SqliteVecVersion)-amalgamation.zip</SqliteVecUrl>
         <SqliteVecZipFile>$([System.IO.Path]::GetFileName('$(SqliteVecUrl)'))</SqliteVecZipFile>
         <SqliteVecZipPath>$([System.IO.Path]::Combine($(BaseIntermediateOutputPath),$(SqliteVecZipFile)))</SqliteVecZipPath>
         <SqliteVecSrcDirectory>$([System.IO.Path]::Combine($(BaseIntermediateOutputPath),'sqlite-vec-$(SqliteVecVersion)'))</SqliteVecSrcDirectory>
         <SqliteVecSourceFile>$([System.IO.Path]::Combine($(SqliteVecSrcDirectory),'sqlite-vec.c'))</SqliteVecSourceFile>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+        <SqliteObjectFile>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'sqlite3.obj'))</SqliteObjectFile>
+        <SqliteVecObjectFile>$([System.IO.Path]::Combine($(SqliteVecSrcDirectory),'sqlite-vec.obj'))</SqliteVecObjectFile>
+        <SqliteNativeLibrary>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'libsqlite3-rimdex.lib'))</SqliteNativeLibrary>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+        <SqliteObjectFile>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'sqlite3.o'))</SqliteObjectFile>
         <SqliteVecObjectFile>$([System.IO.Path]::Combine($(SqliteVecSrcDirectory),'sqlite-vec.o'))</SqliteVecObjectFile>
         <SqliteNativeLibrary>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'libsqlite3-rimdex.a'))</SqliteNativeLibrary>
     </PropertyGroup>
@@ -46,9 +55,12 @@
         <DownloadFile SourceUrl="$(SqliteVecUrl)" DestinationFolder="$(BaseIntermediateOutputPath)" Condition="!Exists($(SqliteVecZipPath))" />
         <MakeDir Directories="$(SqliteVecSrcDirectory)" Condition="!Exists($(SqliteVecSrcDirectory))" />
         <Unzip SourceFiles="$(SqliteVecZipPath)" DestinationFolder="$(SqliteVecSrcDirectory)" Condition="!Exists($(SqliteVecSourceFile))" />
-        <Exec Command="clang -O2 -fPIC -c sqlite3.c -o sqlite3.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="!Exists($(SqliteObjectFile))" />
-        <Exec Command="clang -O2 -fPIC -DSQLITE_CORE -DSQLITE_VEC_STATIC -DSQLITE_VEC_OMIT_FS -I ../sqlite-amalgamation-$(SqliteVersion) -c sqlite-vec.c -o sqlite-vec.o" WorkingDirectory="$(SqliteVecSrcDirectory)" Condition="!Exists($(SqliteVecObjectFile))" />
-        <Exec Command="ar rcs libsqlite3-rimdex.a sqlite3.o ../sqlite-vec-$(SqliteVecVersion)/sqlite-vec.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="!Exists($(SqliteNativeLibrary))" />
+        <Exec Command="cl /nologo /O2 /c sqlite3.c /Fosqlite3.obj" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' == 'Windows_NT' and !Exists($(SqliteObjectFile))" />
+        <Exec Command="cl /nologo /O2 /DSQLITE_CORE /DSQLITE_VEC_STATIC /DSQLITE_VEC_OMIT_FS /I ..\sqlite-amalgamation-$(SqliteVersion) /c sqlite-vec.c /Fosqlite-vec.obj" WorkingDirectory="$(SqliteVecSrcDirectory)" Condition="'$(OS)' == 'Windows_NT' and !Exists($(SqliteVecObjectFile))" />
+        <Exec Command="lib /nologo /out:libsqlite3-rimdex.lib sqlite3.obj ..\sqlite-vec-$(SqliteVecVersion)\sqlite-vec.obj" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' == 'Windows_NT' and !Exists($(SqliteNativeLibrary))" />
+        <Exec Command="clang -O2 -fPIC -c sqlite3.c -o sqlite3.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' != 'Windows_NT' and !Exists($(SqliteObjectFile))" />
+        <Exec Command="clang -O2 -fPIC -DSQLITE_CORE -DSQLITE_VEC_STATIC -DSQLITE_VEC_OMIT_FS -I ../sqlite-amalgamation-$(SqliteVersion) -c sqlite-vec.c -o sqlite-vec.o" WorkingDirectory="$(SqliteVecSrcDirectory)" Condition="'$(OS)' != 'Windows_NT' and !Exists($(SqliteVecObjectFile))" />
+        <Exec Command="ar rcs libsqlite3-rimdex.a sqlite3.o ../sqlite-vec-$(SqliteVecVersion)/sqlite-vec.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' != 'Windows_NT' and !Exists($(SqliteNativeLibrary))" />
     </Target>
 
     <ItemGroup>
@@ -57,7 +69,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Remove=".gitignore" />
+        <None Remove=".gitignore" />
     </ItemGroup>
 
 </Project>
