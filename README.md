@@ -48,3 +48,11 @@ rimdex config set \
   --base-url "https://api.openai.com/v1" \
   --model "text-embedding-3-small"
 ```
+
+## Build from source
+
+```sh
+git clone https://github.com/realloon/rimdex.git
+cd rimdex
+dotnet publish -c Release
+```
