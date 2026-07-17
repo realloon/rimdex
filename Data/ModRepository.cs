@@ -181,14 +181,19 @@ internal sealed class ModRepository(string dbPath) {
         command.Parameters.Add("$search_text_hash", SqliteType.Text);
         command.Parameters.Add("$embedded_at", SqliteType.Text);
 
-        using var vectorCommand = connection.CreateCommand();
-        vectorCommand.Transaction = transaction;
-        vectorCommand.CommandText = """
-                                    insert or replace into mod_embedding_vectors(rowid, embedding)
-                                    values ($mod_id, $embedding)
-                                    """;
-        vectorCommand.Parameters.Add("$mod_id", SqliteType.Integer);
-        vectorCommand.Parameters.Add("$embedding", SqliteType.Blob);
+        using var vectorDeleteCommand = connection.CreateCommand();
+        vectorDeleteCommand.Transaction = transaction;
+        vectorDeleteCommand.CommandText = "delete from mod_embedding_vectors where rowid = $mod_id";
+        vectorDeleteCommand.Parameters.Add("$mod_id", SqliteType.Integer);
+
+        using var vectorInsertCommand = connection.CreateCommand();
+        vectorInsertCommand.Transaction = transaction;
+        vectorInsertCommand.CommandText = """
+                                          insert into mod_embedding_vectors(rowid, embedding)
+                                          values ($mod_id, $embedding)
+                                          """;
+        vectorInsertCommand.Parameters.Add("$mod_id", SqliteType.Integer);
+        vectorInsertCommand.Parameters.Add("$embedding", SqliteType.Blob);
 
         var embeddedAt = DateTimeOffset.UtcNow.ToString("O");
         foreach (var embedding in embeddings) {
@@ -203,9 +208,12 @@ internal sealed class ModRepository(string dbPath) {
             command.Parameters["$embedded_at"].Value = embeddedAt;
             command.ExecuteNonQuery();
 
-            vectorCommand.Parameters["$mod_id"].Value = embedding.ModId;
-            vectorCommand.Parameters["$embedding"].Value = embedding.Embedding;
-            vectorCommand.ExecuteNonQuery();
+            vectorDeleteCommand.Parameters["$mod_id"].Value = embedding.ModId;
+            vectorDeleteCommand.ExecuteNonQuery();
+
+            vectorInsertCommand.Parameters["$mod_id"].Value = embedding.ModId;
+            vectorInsertCommand.Parameters["$embedding"].Value = embedding.Embedding;
+            vectorInsertCommand.ExecuteNonQuery();
         }
 
         transaction.Commit();
