@@ -16,7 +16,7 @@ internal static class RimdexCommand {
     }
 
     private static RootCommand CreateRootCommand() {
-        var root = new RootCommand("RimWorld Workshop mod index and semantic search CLI");
+        var root = new RootCommand("Search RimWorld Workshop mods.");
         root.Subcommands.Add(CreateConfigCommand());
         root.Subcommands.Add(CreateEmbedCommand());
         root.Subcommands.Add(CreateSearchCommand());
@@ -45,7 +45,7 @@ internal static class RimdexCommand {
             Required = true
         };
 
-        var command = new Command("set", "Write embedding configuration.");
+        var command = new Command("set", "Save embedding configuration.");
         command.Options.Add(apiKey);
         command.Options.Add(baseUrl);
         command.Options.Add(model);
@@ -58,7 +58,7 @@ internal static class RimdexCommand {
 
     private static Command CreateEmbedCommand() {
         var limit = new Option<int>("--limit") {
-            Description = "Maximum mods to embed.",
+            Description = "Maximum mods to index.",
             DefaultValueFactory = _ => 100
         };
         var batchSize = new Option<int>("--batch-size") {
@@ -66,7 +66,7 @@ internal static class RimdexCommand {
             DefaultValueFactory = _ => 16
         };
 
-        var command = new Command("embed", "Embed synced mods.");
+        var command = new Command("embed", "Update the semantic search index.");
         command.Options.Add(limit);
         command.Options.Add(batchSize);
         command.SetAction(parseResult => RunAsync(() => EmbedAsync(new EmbedOptions(
@@ -80,14 +80,14 @@ internal static class RimdexCommand {
             Description = "Search query."
         };
         var limit = new Option<int>("--limit") {
-            Description = "Number of results.",
+            Description = "Maximum results to return.",
             DefaultValueFactory = _ => 5
         };
         var candidates = new Option<int?>("--candidates") {
-            Description = "Vector candidates before reranking."
+            Description = "Semantic candidates to rerank."
         };
 
-        var command = new Command("search", "Semantic search imported mods.");
+        var command = new Command("search", "Search RimWorld mods.");
         command.Arguments.Add(query);
         command.Options.Add(limit);
         command.Options.Add(candidates);
@@ -104,20 +104,20 @@ internal static class RimdexCommand {
     }
 
     private static Command CreateStatsCommand() {
-        var command = new Command("stats", "Print database stats.");
+        var command = new Command("stats", "Show local data stats.");
         command.SetAction(_ => Run(PrintStats));
         return command;
     }
 
     private static Command CreateSyncCommand() {
         var limit = new Option<int?>("--limit") {
-            Description = "Maximum Workshop items to sync."
+            Description = "Maximum Workshop items to update."
         };
         var full = new Option<bool>("--full") {
-            Description = "Force a full Workshop sync."
+            Description = "Refresh the full Workshop index."
         };
 
-        var command = new Command("sync", "Sync RimWorld Workshop metadata into SQLite.");
+        var command = new Command("sync", "Update local data.");
         command.Options.Add(limit);
         command.Options.Add(full);
         command.SetAction(parseResult => RunAsync(() => SyncAsync(new SyncOptions(
