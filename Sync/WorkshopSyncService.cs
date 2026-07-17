@@ -43,7 +43,6 @@ internal sealed class WorkshopSyncService(ModRepository repository, SteamWorksho
         var stablePages = 0;
 
         for (var page = 1; page <= MaxIncrementalPages; page++) {
-            Console.WriteLine($"sync:update page={page} fetching ids");
             var browse =
                 await client.FetchBrowsePageAsync(page, SteamWorkshopClient.LastUpdatedSort, cancellationToken);
             var ids = limit is null
@@ -54,7 +53,6 @@ internal sealed class WorkshopSyncService(ModRepository repository, SteamWorksho
                 return 0;
             }
 
-            Console.WriteLine($"sync:update page={page} fetching details={ids.Length}");
             var details = await client.FetchDetailsAsync(ids, cancellationToken);
             repository.Import(details);
             synced += details.Count;
@@ -82,11 +80,12 @@ internal sealed class WorkshopSyncService(ModRepository repository, SteamWorksho
 
         for (var index = 0; index < ids.Count; index += DetailsBatchSize) {
             var batch = ids.Skip(index).Take(DetailsBatchSize).ToArray();
-            Console.WriteLine($"details fetching {index + 1}-{index + batch.Length}/{ids.Count}");
             var details = await client.FetchDetailsAsync(batch, cancellationToken);
             repository.Import(details);
             synced += details.Count;
-            Console.WriteLine($"synced {synced}/{ids.Count}");
+            if (synced % 1000 == 0 || synced == ids.Count) {
+                Console.WriteLine($"synced {synced}/{ids.Count}");
+            }
         }
     }
 
@@ -99,7 +98,6 @@ internal sealed class WorkshopSyncService(ModRepository repository, SteamWorksho
         var totalPages = 0;
 
         for (var page = 1; totalPages == 0 || page <= totalPages; page++) {
-            Console.WriteLine($"ids page={page} fetching");
             var (currentPage, i, totalCount, strings) =
                 await client.FetchBrowsePageAsync(page, sort, cancellationToken);
             if (currentPage != page) {
@@ -115,13 +113,23 @@ internal sealed class WorkshopSyncService(ModRepository repository, SteamWorksho
 
                 if (limit is null || ids.Count < limit.Value) continue;
 
-                Console.WriteLine($"ids page={page}/{totalPages} unique={ids.Count}/{totalCount}");
+                ReportIdsProgress(page, totalPages, ids.Count, totalCount);
                 return ids;
             }
 
-            Console.WriteLine($"ids page={page}/{totalPages} unique={ids.Count}/{totalCount}");
+            if (ShouldReportPage(page, totalPages)) {
+                ReportIdsProgress(page, totalPages, ids.Count, totalCount);
+            }
         }
 
         return ids;
+    }
+
+    private static bool ShouldReportPage(int page, int totalPages) {
+        return page == 1 || page % 10 == 0 || page == totalPages;
+    }
+
+    private static void ReportIdsProgress(int page, int totalPages, int unique, int totalCount) {
+        Console.WriteLine($"ids page={page}/{totalPages} unique={unique}/{totalCount}");
     }
 }
