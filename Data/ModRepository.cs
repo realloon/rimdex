@@ -92,6 +92,16 @@ internal sealed class ModRepository(string dbPath) {
             TableExists(connection, "mod_embeddings") ? Count(connection, "mod_embeddings") : 0);
     }
 
+    public long ReadMaxUpdatedTime() {
+        EnsureDbDirectory();
+
+        using var connection = OpenConnection();
+        CreateSchema(connection);
+
+        var value = ExecuteScalar(connection, "select max(time_updated) from mods");
+        return value is null or DBNull ? 0 : (long)value;
+    }
+
     public IReadOnlyList<PendingEmbeddingRow> ReadPendingEmbeddingRows(int limit, string model) {
         EnsureDbDirectory();
 
@@ -478,6 +488,12 @@ internal sealed class ModRepository(string dbPath) {
         using var command = connection.CreateCommand();
         command.CommandText = sql;
         command.ExecuteNonQuery();
+    }
+
+    private static object? ExecuteScalar(SqliteConnection connection, string sql) {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return command.ExecuteScalar();
     }
 
     private void EnsureDbDirectory() {

@@ -2,9 +2,9 @@ using System.CommandLine;
 using Rimdex.Configuration;
 using Rimdex.Data;
 using Rimdex.Embedding;
-using Rimdex.Importing;
 using Rimdex.Platform;
 using Rimdex.Search;
+using Rimdex.Sync;
 
 namespace Rimdex.Cli;
 
@@ -19,9 +19,9 @@ internal static class RimdexCommand {
         var root = new RootCommand("RimWorld Workshop mod index and semantic search CLI");
         root.Subcommands.Add(CreateConfigCommand());
         root.Subcommands.Add(CreateEmbedCommand());
-        root.Subcommands.Add(CreateImportCommand());
         root.Subcommands.Add(CreateSearchCommand());
         root.Subcommands.Add(CreateStatsCommand());
+        root.Subcommands.Add(CreateSyncCommand());
         return root;
     }
 
@@ -66,7 +66,7 @@ internal static class RimdexCommand {
             DefaultValueFactory = _ => 16
         };
 
-        var command = new Command("embed", "Embed imported mods.");
+        var command = new Command("embed", "Embed synced mods.");
         command.Options.Add(limit);
         command.Options.Add(batchSize);
         command.SetAction(parseResult => RunAsync(() => EmbedAsync(new EmbedOptions(
@@ -103,20 +103,26 @@ internal static class RimdexCommand {
         return command;
     }
 
-    private static Command CreateImportCommand() {
-        var detailsDir = new Argument<string>("details-dir") {
-            Description = "Directory containing crawled Workshop detail JSON files."
-        };
-
-        var command = new Command("import", "Import crawled mod details into SQLite.");
-        command.Arguments.Add(detailsDir);
-        command.SetAction(parseResult => RunAsync(() => ImportAsync(parseResult.GetRequiredValue(detailsDir))));
-        return command;
-    }
-
     private static Command CreateStatsCommand() {
         var command = new Command("stats", "Print database stats.");
         command.SetAction(_ => Run(PrintStats));
+        return command;
+    }
+
+    private static Command CreateSyncCommand() {
+        var limit = new Option<int?>("--limit") {
+            Description = "Maximum Workshop items to sync."
+        };
+        var full = new Option<bool>("--full") {
+            Description = "Force a full Workshop sync."
+        };
+
+        var command = new Command("sync", "Sync RimWorld Workshop metadata into SQLite.");
+        command.Options.Add(limit);
+        command.Options.Add(full);
+        command.SetAction(parseResult => RunAsync(() => SyncAsync(new SyncOptions(
+            parseResult.GetValue(limit),
+            parseResult.GetValue(full)))));
         return command;
     }
 
@@ -153,16 +159,6 @@ internal static class RimdexCommand {
         return await SearchService.Create().SearchAsync(options, CancellationToken.None);
     }
 
-    private static async Task<int> ImportAsync(string detailsDir) {
-        var dbPath = AppPaths.DatabasePath;
-        var repository = new ModRepository(dbPath);
-        var importer = new ModImporter(repository);
-        var count = await importer.ImportAsync(detailsDir);
-
-        Console.WriteLine($"imported {count} mods into {dbPath}");
-        return 0;
-    }
-
     private static int PrintStats() {
         var dbPath = AppPaths.DatabasePath;
         var repository = new ModRepository(dbPath);
@@ -172,5 +168,9 @@ internal static class RimdexCommand {
         Console.WriteLine($"mods: {stats.Mods}");
         Console.WriteLine($"embeddings: {stats.Embeddings}");
         return 0;
+    }
+
+    private static async Task<int> SyncAsync(SyncOptions options) {
+        return await WorkshopSyncService.Create().SyncAsync(options, CancellationToken.None);
     }
 }
