@@ -1,6 +1,6 @@
 namespace Rimdex.Search;
 
-internal readonly record struct SearchOptions(string Query, int Limit, int Candidates) {
+internal readonly record struct SearchOptions(string Query, int Limit, bool Keyword) {
     public void Validate() {
         if (string.IsNullOrWhiteSpace(Query)) {
             throw new ArgumentException("query must not be empty", nameof(Query));
@@ -8,15 +8,6 @@ internal readonly record struct SearchOptions(string Query, int Limit, int Candi
 
         if (Limit <= 0) {
             throw new ArgumentOutOfRangeException(nameof(Limit), "limit must be positive");
-        }
-
-        if (Candidates <= 0) {
-            throw new ArgumentOutOfRangeException(nameof(Candidates), "candidates must be positive");
-        }
-
-        if (Candidates < Limit) {
-            throw new ArgumentOutOfRangeException(nameof(Candidates),
-                "candidates must be greater than or equal to limit");
         }
     }
 }

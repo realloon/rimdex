@@ -1,11 +1,9 @@
 namespace Rimdex.Data;
 
-internal sealed record SearchCandidateRow(
-    int Id,
+internal sealed record SearchResultRow(
     string PublishedFileId,
     string Title,
     string Description,
     string PreviewUrl,
     long Subscriptions,
-    long Views,
-    float Distance);
+    long Views);

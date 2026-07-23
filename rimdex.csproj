@@ -38,15 +38,15 @@
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
-        <SqliteObjectFile>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'sqlite3.obj'))</SqliteObjectFile>
+        <SqliteObjectFile>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'sqlite3-fts5.obj'))</SqliteObjectFile>
         <SqliteVecObjectFile>$([System.IO.Path]::Combine($(SqliteVecSrcDirectory),'sqlite-vec.obj'))</SqliteVecObjectFile>
-        <SqliteNativeLibrary>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'libsqlite3-rimdex.lib'))</SqliteNativeLibrary>
+        <SqliteNativeLibrary>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'libsqlite3-rimdex-fts5.lib'))</SqliteNativeLibrary>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
-        <SqliteObjectFile>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'sqlite3.o'))</SqliteObjectFile>
+        <SqliteObjectFile>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'sqlite3-fts5.o'))</SqliteObjectFile>
         <SqliteVecObjectFile>$([System.IO.Path]::Combine($(SqliteVecSrcDirectory),'sqlite-vec.o'))</SqliteVecObjectFile>
-        <SqliteNativeLibrary>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'libsqlite3-rimdex.a'))</SqliteNativeLibrary>
+        <SqliteNativeLibrary>$([System.IO.Path]::Combine($(SqliteSrcDirectory),'libsqlite3-rimdex-fts5.a'))</SqliteNativeLibrary>
     </PropertyGroup>
 
     <Target Name="BuildSqlite" BeforeTargets="LinkNative" Condition="!Exists($(SqliteNativeLibrary))">
@@ -55,12 +55,12 @@
         <DownloadFile SourceUrl="$(SqliteVecUrl)" DestinationFolder="$(BaseIntermediateOutputPath)" Condition="!Exists($(SqliteVecZipPath))" />
         <MakeDir Directories="$(SqliteVecSrcDirectory)" Condition="!Exists($(SqliteVecSrcDirectory))" />
         <Unzip SourceFiles="$(SqliteVecZipPath)" DestinationFolder="$(SqliteVecSrcDirectory)" Condition="!Exists($(SqliteVecSourceFile))" />
-        <Exec Command="cl /nologo /O2 /c sqlite3.c /Fosqlite3.obj" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' == 'Windows_NT' and !Exists($(SqliteObjectFile))" />
+        <Exec Command="cl /nologo /O2 /DSQLITE_ENABLE_FTS5 /c sqlite3.c /Fosqlite3-fts5.obj" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' == 'Windows_NT' and !Exists($(SqliteObjectFile))" />
         <Exec Command="cl /nologo /O2 /DSQLITE_CORE /DSQLITE_VEC_STATIC /DSQLITE_VEC_OMIT_FS /I ..\sqlite-amalgamation-$(SqliteVersion) /c sqlite-vec.c /Fosqlite-vec.obj" WorkingDirectory="$(SqliteVecSrcDirectory)" Condition="'$(OS)' == 'Windows_NT' and !Exists($(SqliteVecObjectFile))" />
-        <Exec Command="lib /nologo /out:libsqlite3-rimdex.lib sqlite3.obj ..\sqlite-vec-$(SqliteVecVersion)\sqlite-vec.obj" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' == 'Windows_NT' and !Exists($(SqliteNativeLibrary))" />
-        <Exec Command="clang -O2 -fPIC -c sqlite3.c -o sqlite3.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' != 'Windows_NT' and !Exists($(SqliteObjectFile))" />
+        <Exec Command="lib /nologo /out:libsqlite3-rimdex-fts5.lib sqlite3-fts5.obj ..\sqlite-vec-$(SqliteVecVersion)\sqlite-vec.obj" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' == 'Windows_NT' and !Exists($(SqliteNativeLibrary))" />
+        <Exec Command="clang -O2 -fPIC -DSQLITE_ENABLE_FTS5 -c sqlite3.c -o sqlite3-fts5.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' != 'Windows_NT' and !Exists($(SqliteObjectFile))" />
         <Exec Command="clang -O2 -fPIC -DSQLITE_CORE -DSQLITE_VEC_STATIC -DSQLITE_VEC_OMIT_FS -I ../sqlite-amalgamation-$(SqliteVersion) -c sqlite-vec.c -o sqlite-vec.o" WorkingDirectory="$(SqliteVecSrcDirectory)" Condition="'$(OS)' != 'Windows_NT' and !Exists($(SqliteVecObjectFile))" />
-        <Exec Command="ar rcs libsqlite3-rimdex.a sqlite3.o ../sqlite-vec-$(SqliteVecVersion)/sqlite-vec.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' != 'Windows_NT' and !Exists($(SqliteNativeLibrary))" />
+        <Exec Command="ar rcs libsqlite3-rimdex-fts5.a sqlite3-fts5.o ../sqlite-vec-$(SqliteVecVersion)/sqlite-vec.o" WorkingDirectory="$(SqliteSrcDirectory)" Condition="'$(OS)' != 'Windows_NT' and !Exists($(SqliteNativeLibrary))" />
     </Target>
 
     <ItemGroup>

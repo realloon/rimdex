@@ -83,23 +83,18 @@ internal static class RimdexCommand {
             Description = "Maximum results to return.",
             DefaultValueFactory = _ => 5
         };
-        var candidates = new Option<int?>("--candidates") {
-            Description = "Semantic candidates to rerank."
+        var keyword = new Option<bool>("--keyword") {
+            Description = "Use keyword search."
         };
 
         var command = new Command("search", "Search RimWorld mods.");
         command.Arguments.Add(query);
         command.Options.Add(limit);
-        command.Options.Add(candidates);
-        command.SetAction(parseResult => {
-            var resultLimit = parseResult.GetRequiredValue(limit);
-            var candidateCount = parseResult.GetValue(candidates) ?? Math.Max(50, resultLimit * 10);
-
-            return RunAsync(() => SearchAsync(new SearchOptions(
-                parseResult.GetRequiredValue(query),
-                resultLimit,
-                candidateCount)));
-        });
+        command.Options.Add(keyword);
+        command.SetAction(parseResult => RunAsync(() => SearchAsync(new SearchOptions(
+            parseResult.GetRequiredValue(query),
+            parseResult.GetRequiredValue(limit),
+            parseResult.GetValue(keyword)))));
         return command;
     }
 

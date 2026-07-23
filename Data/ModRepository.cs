@@ -228,7 +228,7 @@ internal sealed class ModRepository(string dbPath) {
         EnsureVectorIndex(connection, model);
     }
 
-    public IReadOnlyList<SearchCandidateRow> SearchCandidates(string model, byte[] queryEmbedding, int candidates) {
+    public IReadOnlyList<SearchResultRow> SearchSemantic(string model, byte[] queryEmbedding, int limit) {
         EnsureDbDirectory();
 
         using var connection = OpenConnection();
@@ -252,18 +252,16 @@ internal sealed class ModRepository(string dbPath) {
                                 select rowid, distance
                                 from mod_embedding_vectors
                                 where embedding match $query
-                                  and k = $candidates
+                                  and k = $limit
                                   and rowid in (select id from eligible)
                               )
                               select
-                                mods.id,
                                 mods.publishedfileid,
                                 mods.title,
                                 mods.description,
                                 mods.preview_url,
                                 mods.subscriptions,
-                                mods.views,
-                                matches.distance
+                                mods.views
                               from matches
                               join mods on mods.id = matches.rowid
                               join eligible on eligible.id = mods.id
@@ -271,23 +269,65 @@ internal sealed class ModRepository(string dbPath) {
                               """;
         command.Parameters.AddWithValue("$model", model);
         command.Parameters.AddWithValue("$query", queryEmbedding);
-        command.Parameters.AddWithValue("$candidates", candidates);
+        command.Parameters.AddWithValue("$limit", limit);
 
         using var reader = command.ExecuteReader();
-        var rows = new List<SearchCandidateRow>();
+        return ReadSearchResults(reader);
+    }
+
+    public IReadOnlyList<SearchResultRow> SearchKeywords(string query, int limit) {
+        EnsureDbDirectory();
+
+        using var connection = OpenConnection();
+        CreateSchema(connection);
+        CreateKeywordSearchSchema(connection);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+                              select
+                                mods.publishedfileid,
+                                mods.title,
+                                mods.description,
+                                mods.preview_url,
+                                mods.subscriptions,
+                                mods.views
+                              from mod_search
+                              join mods on mods.id = mod_search.rowid
+                              where mod_search match $query
+                                and not exists (
+                                  select 1
+                                  from json_each(mods.tags_json)
+                                  where json_each.value = 'Translation'
+                                )
+                              order by bm25(mod_search, 10.0, 1.0), mods.id
+                              limit $limit
+                              """;
+        command.Parameters.AddWithValue("$query", BuildKeywordQuery(query));
+        command.Parameters.AddWithValue("$limit", limit);
+
+        using var reader = command.ExecuteReader();
+        return ReadSearchResults(reader);
+    }
+
+    private static IReadOnlyList<SearchResultRow> ReadSearchResults(SqliteDataReader reader) {
+        var rows = new List<SearchResultRow>();
         while (reader.Read()) {
-            rows.Add(new SearchCandidateRow(
-                reader.GetInt32(0),
+            rows.Add(new SearchResultRow(
+                reader.GetString(0),
                 reader.GetString(1),
                 reader.GetString(2),
                 reader.GetString(3),
-                reader.GetString(4),
-                reader.GetInt64(5),
-                reader.GetInt64(6),
-                (float)reader.GetDouble(7)));
+                reader.GetInt64(4),
+                reader.GetInt64(5)));
         }
 
         return rows;
+    }
+
+    private static string BuildKeywordQuery(string query) {
+        return string.Join(" AND ", query
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Select(term => $"\"{term.Replace("\"", "\"\"")}\""));
     }
 
     private SqliteConnection OpenConnection() {
@@ -343,6 +383,46 @@ internal sealed class ModRepository(string dbPath) {
                               value text not null
                             )
                             """);
+    }
+
+    private static void CreateKeywordSearchSchema(SqliteConnection connection) {
+        var rebuild = !TableExists(connection, "mod_search");
+        using var transaction = connection.BeginTransaction();
+
+        Execute(connection, """
+                            create virtual table if not exists mod_search using fts5(
+                              title,
+                              description,
+                              content = 'mods',
+                              content_rowid = 'id'
+                            )
+                            """, transaction);
+        Execute(connection, """
+                            create trigger if not exists mods_search_after_insert after insert on mods begin
+                              insert into mod_search(rowid, title, description)
+                              values (new.id, new.title, new.description);
+                            end
+                            """, transaction);
+        Execute(connection, """
+                            create trigger if not exists mods_search_after_update after update of title, description on mods begin
+                              insert into mod_search(mod_search, rowid, title, description)
+                              values ('delete', old.id, old.title, old.description);
+                              insert into mod_search(rowid, title, description)
+                              values (new.id, new.title, new.description);
+                            end
+                            """, transaction);
+        Execute(connection, """
+                            create trigger if not exists mods_search_after_delete after delete on mods begin
+                              insert into mod_search(mod_search, rowid, title, description)
+                              values ('delete', old.id, old.title, old.description);
+                            end
+                            """, transaction);
+
+        if (rebuild) {
+            Execute(connection, "insert into mod_search(mod_search) values ('rebuild')", transaction);
+        }
+
+        transaction.Commit();
     }
 
     private static void EnsureVectorIndex(SqliteConnection connection, string model) {
@@ -492,8 +572,12 @@ internal sealed class ModRepository(string dbPath) {
         return (long)command.ExecuteScalar()! > 0;
     }
 
-    private static void Execute(SqliteConnection connection, string sql) {
+    private static void Execute(
+        SqliteConnection connection,
+        string sql,
+        SqliteTransaction? transaction = null) {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = sql;
         command.ExecuteNonQuery();
     }
