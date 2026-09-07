@@ -3,18 +3,18 @@
 Search engine for RimWorld Workshop mods.
 
 ```text
-┌───────────────────────────────────────────────────────┐
-│ $ rimdex search "storage limit"                       │
-│ [                                                     │
-│   {                                                   │
-│     "title": "Storage Item Limiter",                  │
-│     "url": "https://steamcommunity.com/shared...",    │
-│     "summary": "Enables storage units to have...",    │
-│     "subscriptions": 727,                             │
-│     "views": 2686                                     │
-│   }                                                   │
-│ ]                                                     │
-└───────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│ $ rimdex search "storage limit"               │
+│ [                                             │
+│   {                                           │
+│     "title": "Storage Item Limiter",          │
+│     "url": "https://steamcommunity.com/...",  │
+│     "summary": "Enables storage units...",    │
+│     "subscriptions": 727,                     │
+│     "views": 2686                             │
+│   }                                           │
+│ ]                                             │
+└───────────────────────────────────────────────┘
 ```
 
 ## Install
@@ -25,27 +25,21 @@ Search engine for RimWorld Workshop mods.
 curl -fsSL https://raw.githubusercontent.com/realloon/rimdex/main/install.sh | sh
 ```
 
-### Windows
-
-Run in PowerShell:
+### Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/realloon/rimdex/main/install.ps1 | iex
 ```
 
-### Manual
-
-Download the latest release binary from [Releases](https://github.com/realloon/rimdex/releases) and place it into your `PATH` (e.g. `~/.local/bin`).
-
-## Configure rimdex
+## Configure
 
 rimdex uses an embedding model. Configure it with:
 
 ```sh
 rimdex config set \
   --api-key "YOUR_API_KEY" \
-  --base-url "https://api.openai.com/v1" \
-  --model "text-embedding-3-small"
+  --base-url "YOUR_BASE_URL" \
+  --model "YOUR_MODEL"
 ```
 
 ## Build from source
