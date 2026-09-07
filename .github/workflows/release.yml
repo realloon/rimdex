@@ -50,19 +50,19 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Publish Native AOT binary
-        run: dotnet publish rimdex.csproj -c Release -r ${{ matrix.rid }} /p:Platform="Any CPU"
+        run: dotnet publish rimdex.csproj -c Release -r ${{ matrix.rid }} -o ./publish
 
       - name: Package archive (Unix)
         if: runner.os != 'Windows'
         run: |
-          cd bin/Release/net10.0/${{ matrix.rid }}/publish
+          cd publish
           zip -9 -r "$GITHUB_WORKSPACE/${{ matrix.asset_name }}" ${{ matrix.binary_name }}
 
       - name: Package archive (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "bin\Release\net10.0\${{ matrix.rid }}\publish\${{ matrix.binary_name }}" -DestinationPath "${{ matrix.asset_name }}" -Force
+          Compress-Archive -Path "publish\${{ matrix.binary_name }}" -DestinationPath "${{ matrix.asset_name }}" -Force
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
