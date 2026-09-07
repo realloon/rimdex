@@ -14,6 +14,7 @@ jobs:
     name: Build (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -42,26 +43,26 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang zlib1g-dev
+          sudo apt-get install -y clang zlib1g-dev zip
 
       - name: Setup Windows MSVC build tools
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Publish Native AOT binary
-        run: dotnet publish -c Release -r ${{ matrix.rid }}
+        run: dotnet publish rimdex.csproj -c Release -r ${{ matrix.rid }} /p:Platform="Any CPU"
 
       - name: Package archive (Unix)
         if: runner.os != 'Windows'
         run: |
           cd bin/Release/net10.0/${{ matrix.rid }}/publish
-          zip -9 -r ../../../../../${{ matrix.asset_name }} ${{ matrix.binary_name }}
+          zip -9 -r "$GITHUB_WORKSPACE/${{ matrix.asset_name }}" ${{ matrix.binary_name }}
 
       - name: Package archive (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path bin\Release\net10.0\${{ matrix.rid }}\publish\${{ matrix.binary_name }} -DestinationPath ${{ matrix.asset_name }}
+          Compress-Archive -Path "bin\Release\net10.0\${{ matrix.rid }}\publish\${{ matrix.binary_name }}" -DestinationPath "${{ matrix.asset_name }}" -Force
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
