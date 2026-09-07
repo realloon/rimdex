@@ -1,6 +1,6 @@
 # rimdex
 
-Semantic search for RimWorld Workshop mods.
+Search engine for RimWorld Workshop mods.
 
 ![](https://oss-1259210922.cos.ap-nanjing.myqcloud.com/rimdex-demo.avif)
 

@@ -19,7 +19,7 @@ internal static class RimdexCommand {
     }
 
     private static RootCommand CreateRootCommand() =>
-        new("Search RimWorld Workshop mods.") {
+        new("Search engine for RimWorld Workshop mods.") {
             CreateConfigCommand(),
             CreateEmbedCommand(),
             CreateSearchCommand(),
