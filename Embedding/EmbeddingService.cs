@@ -1,34 +1,65 @@
+using System.Runtime.InteropServices;
 using Rimdex.Configuration;
 using Rimdex.Data;
 using Rimdex.Platform;
 
 namespace Rimdex.Embedding;
 
+internal static class EmbeddingVector {
+    public static byte[] ToBlob(float[] vector) {
+        if (vector.Length == 0) {
+            throw new InvalidDataException("Embedding API returned an empty vector");
+        }
+
+        double sum = 0;
+        foreach (var value in vector) {
+            if (!float.IsFinite(value)) {
+                throw new InvalidDataException("Embedding API returned a non-finite vector value");
+            }
+
+            sum += (double)value * value;
+        }
+
+        var norm = (float)Math.Sqrt(sum);
+        if (norm == 0 || !float.IsFinite(norm)) {
+            throw new InvalidDataException("Embedding API returned an invalid vector norm");
+        }
+
+        var normalized = new float[vector.Length];
+        for (var i = 0; i < vector.Length; i++) {
+            normalized[i] = vector[i] / norm;
+        }
+
+        return MemoryMarshal.AsBytes(normalized.AsSpan()).ToArray();
+    }
+}
+
 internal sealed class EmbeddingService(ModRepository repository, EmbeddingClient client) {
-    public async Task<int> EmbedAsync(EmbedOptions options, CancellationToken cancellationToken) {
-        options.Validate();
+    public async Task<int> EmbedAsync(int limit, int batchSize, CancellationToken cancellationToken) {
+        if (limit <= 0) {
+            throw new ArgumentOutOfRangeException(nameof(limit), "limit must be positive");
+        }
+
+        if (batchSize <= 0) {
+            throw new ArgumentOutOfRangeException(nameof(batchSize), "batch-size must be positive");
+        }
 
         var config = RimdexConfig.Load();
-        var pending = repository.ReadPendingEmbeddingRows(options.Limit, config.Model);
+        var pending = repository.ReadPendingEmbeddingRows(limit, config.Model);
         if (pending.Count == 0) {
             Console.WriteLine("no pending mods to embed");
             return 0;
         }
 
         var embedded = 0;
-        for (var index = 0; index < pending.Count; index += options.BatchSize) {
-            var batch = pending.Skip(index).Take(options.BatchSize).ToArray();
-            var vectors =
-                await client.FetchAsync(batch.Select(row => row.SearchText).ToArray(), config, cancellationToken);
-            var embeddings = new List<ModEmbedding>(batch.Length);
-
-            for (var vectorIndex = 0; vectorIndex < vectors.Length; vectorIndex++) {
-                embeddings.Add(new ModEmbedding(
-                    batch[vectorIndex].ModId,
-                    batch[vectorIndex].SearchTextHash,
-                    EmbeddingVector.NormalizeToBlob(vectors[vectorIndex]),
-                    vectors[vectorIndex].Length));
-            }
+        for (var index = 0; index < pending.Count; index += batchSize) {
+            var batch = pending.Skip(index).Take(batchSize).ToArray();
+            var vectors = await client.FetchAsync([.. batch.Select(row => row.SearchText)], config, cancellationToken);
+            var embeddings = vectors.Select((t, i) => new ModEmbedding(
+                batch[i].ModId,
+                batch[i].SearchTextHash,
+                EmbeddingVector.ToBlob(t),
+                t.Length)).ToArray();
 
             repository.UpsertEmbeddings(config.Model, embeddings);
             embedded += batch.Length;
@@ -38,9 +69,6 @@ internal sealed class EmbeddingService(ModRepository repository, EmbeddingClient
         return 0;
     }
 
-    public static EmbeddingService Create() {
-        return new EmbeddingService(
-            new ModRepository(AppPaths.DatabasePath),
-            new EmbeddingClient(new HttpClient()));
-    }
+    public static EmbeddingService Create() =>
+        new(new ModRepository(AppPaths.DatabasePath), new EmbeddingClient(new HttpClient()));
 }

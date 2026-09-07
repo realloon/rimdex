@@ -10,26 +10,27 @@ namespace Rimdex.Cli;
 
 internal static class RimdexCommand {
     public static async Task<int> RunAsync(string[] args) {
-        var command = CreateRootCommand();
-        var parseResult = command.Parse(args);
-        return await parseResult.InvokeAsync();
+        try {
+            return await CreateRootCommand().Parse(args).InvokeAsync();
+        } catch (Exception ex) {
+            await Console.Error.WriteLineAsync($"error: {ex.Message}");
+            return 1;
+        }
     }
 
-    private static RootCommand CreateRootCommand() {
-        var root = new RootCommand("Search RimWorld Workshop mods.");
-        root.Subcommands.Add(CreateConfigCommand());
-        root.Subcommands.Add(CreateEmbedCommand());
-        root.Subcommands.Add(CreateSearchCommand());
-        root.Subcommands.Add(CreateStatsCommand());
-        root.Subcommands.Add(CreateSyncCommand());
-        return root;
-    }
+    private static RootCommand CreateRootCommand() =>
+        new("Search RimWorld Workshop mods.") {
+            CreateConfigCommand(),
+            CreateEmbedCommand(),
+            CreateSearchCommand(),
+            CreateStatsCommand(),
+            CreateSyncCommand()
+        };
 
-    private static Command CreateConfigCommand() {
-        var command = new Command("config", "Manage rimdex configuration.");
-        command.Subcommands.Add(CreateConfigSetCommand());
-        return command;
-    }
+    private static Command CreateConfigCommand() =>
+        new("config", "Manage rimdex configuration.") {
+            CreateConfigSetCommand()
+        };
 
     private static Command CreateConfigSetCommand() {
         var apiKey = new Option<string>("--api-key") {
@@ -45,14 +46,15 @@ internal static class RimdexCommand {
             Required = true
         };
 
-        var command = new Command("set", "Save embedding configuration.");
-        command.Options.Add(apiKey);
-        command.Options.Add(baseUrl);
-        command.Options.Add(model);
-        command.SetAction(parseResult => Run(() => SaveConfig(
-            parseResult.GetRequiredValue(apiKey),
-            parseResult.GetRequiredValue(baseUrl),
-            parseResult.GetRequiredValue(model))));
+        var command = new Command("set", "Save embedding configuration.") { apiKey, baseUrl, model };
+        command.SetAction(parseResult => {
+            new RimdexConfig(
+                parseResult.GetRequiredValue(apiKey),
+                parseResult.GetRequiredValue(baseUrl),
+                parseResult.GetRequiredValue(model)).Save();
+            Console.WriteLine($"wrote config to {AppPaths.ConfigPath}");
+            return 0;
+        });
         return command;
     }
 
@@ -66,12 +68,11 @@ internal static class RimdexCommand {
             DefaultValueFactory = _ => 16
         };
 
-        var command = new Command("embed", "Update the semantic search index.");
-        command.Options.Add(limit);
-        command.Options.Add(batchSize);
-        command.SetAction(parseResult => RunAsync(() => EmbedAsync(new EmbedOptions(
+        var command = new Command("embed", "Update the semantic search index.") { limit, batchSize };
+        command.SetAction((parseResult, ct) => EmbeddingService.Create().EmbedAsync(
             parseResult.GetRequiredValue(limit),
-            parseResult.GetRequiredValue(batchSize)))));
+            parseResult.GetRequiredValue(batchSize),
+            ct));
         return command;
     }
 
@@ -87,20 +88,24 @@ internal static class RimdexCommand {
             Description = "Use keyword search."
         };
 
-        var command = new Command("search", "Search RimWorld mods.");
-        command.Arguments.Add(query);
-        command.Options.Add(limit);
-        command.Options.Add(keyword);
-        command.SetAction(parseResult => RunAsync(() => SearchAsync(new SearchOptions(
+        var command = new Command("search", "Search RimWorld mods.") { query, limit, keyword };
+        command.SetAction((parseResult, ct) => SearchService.Create().SearchAsync(
             parseResult.GetRequiredValue(query),
             parseResult.GetRequiredValue(limit),
-            parseResult.GetValue(keyword)))));
+            parseResult.GetValue(keyword),
+            ct));
         return command;
     }
 
     private static Command CreateStatsCommand() {
         var command = new Command("stats", "Show local data stats.");
-        command.SetAction(_ => Run(PrintStats));
+        command.SetAction(_ => {
+            var stats = new ModRepository(AppPaths.DatabasePath).ReadStats();
+            Console.WriteLine($"db: {AppPaths.DatabasePath}");
+            Console.WriteLine($"mods: {stats.Mods}");
+            Console.WriteLine($"embeddings: {stats.Embeddings}");
+            return 0;
+        });
         return command;
     }
 
@@ -112,60 +117,11 @@ internal static class RimdexCommand {
             Description = "Refresh the full Workshop index."
         };
 
-        var command = new Command("sync", "Update local data.");
-        command.Options.Add(limit);
-        command.Options.Add(full);
-        command.SetAction(parseResult => RunAsync(() => SyncAsync(new SyncOptions(
+        var command = new Command("sync", "Update local data.") { limit, full };
+        command.SetAction((parseResult, ct) => WorkshopSyncService.Create().SyncAsync(
             parseResult.GetValue(limit),
-            parseResult.GetValue(full)))));
+            parseResult.GetValue(full),
+            ct));
         return command;
-    }
-
-    private static int Run(Func<int> action) {
-        try {
-            return action();
-        } catch (Exception ex) {
-            Console.Error.WriteLine($"error: {ex.Message}");
-            return 1;
-        }
-    }
-
-    private static async Task<int> RunAsync(Func<Task<int>> action) {
-        try {
-            return await action();
-        } catch (Exception ex) {
-            await Console.Error.WriteLineAsync($"error: {ex.Message}");
-            return 1;
-        }
-    }
-
-    private static int SaveConfig(string apiKey, string baseUrl, string model) {
-        var config = new RimdexConfig(apiKey, baseUrl, model);
-        config.Save();
-        Console.WriteLine($"wrote config to {AppPaths.ConfigPath}");
-        return 0;
-    }
-
-    private static async Task<int> EmbedAsync(EmbedOptions options) {
-        return await EmbeddingService.Create().EmbedAsync(options, CancellationToken.None);
-    }
-
-    private static async Task<int> SearchAsync(SearchOptions options) {
-        return await SearchService.Create().SearchAsync(options, CancellationToken.None);
-    }
-
-    private static int PrintStats() {
-        var dbPath = AppPaths.DatabasePath;
-        var repository = new ModRepository(dbPath);
-        var stats = repository.ReadStats();
-
-        Console.WriteLine($"db: {dbPath}");
-        Console.WriteLine($"mods: {stats.Mods}");
-        Console.WriteLine($"embeddings: {stats.Embeddings}");
-        return 0;
-    }
-
-    private static async Task<int> SyncAsync(SyncOptions options) {
-        return await WorkshopSyncService.Create().SyncAsync(options, CancellationToken.None);
     }
 }

@@ -13,12 +13,8 @@ namespace Rimdex.Serialization;
 [JsonSerializable(typeof(RimdexConfig))]
 [JsonSerializable(typeof(SearchResultDto[]))]
 [JsonSerializable(typeof(string[]))]
-internal sealed partial class RimdexJsonContext : JsonSerializerContext;
-
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
-[JsonSerializable(typeof(SearchResultDto[]))]
-internal sealed partial class RimdexIndentedJsonContext : JsonSerializerContext {
-    public static RimdexIndentedJsonContext Console { get; } = new(new JsonSerializerOptions {
+internal sealed partial class RimdexJsonContext : JsonSerializerContext {
+    public static RimdexJsonContext Indented { get; } = new(new JsonSerializerOptions {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true

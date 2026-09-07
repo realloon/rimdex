@@ -13,9 +13,7 @@ internal static partial class SqliteVec {
         try {
             handle.DangerousAddRef(ref added);
             var rc = Init(handle.DangerousGetHandle(), out var error, IntPtr.Zero);
-            if (rc == 0) {
-                return;
-            }
+            if (rc == 0) return;
 
             var message = error == IntPtr.Zero
                 ? $"sqlite-vec initialization failed with code {rc}"

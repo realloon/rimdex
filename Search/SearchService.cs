@@ -8,13 +8,27 @@ using System.Text.RegularExpressions;
 
 namespace Rimdex.Search;
 
-internal sealed partial class SearchService(ModRepository repository, EmbeddingClient client) {
-    public async Task<int> SearchAsync(SearchOptions options, CancellationToken cancellationToken) {
-        options.Validate();
+internal sealed record SearchResultDto(
+    string Url,
+    string Title,
+    string Summary,
+    string PreviewUrl,
+    long Subscriptions,
+    long Views);
 
-        var results = options.Keyword
-            ? repository.SearchKeywords(options.Query, options.Limit)
-            : await SearchSemanticAsync(options.Query, options.Limit, cancellationToken);
+internal sealed partial class SearchService(ModRepository repository, EmbeddingClient client) {
+    public async Task<int> SearchAsync(string query, int limit, bool keyword, CancellationToken cancellationToken) {
+        if (string.IsNullOrWhiteSpace(query)) {
+            throw new ArgumentException("query must not be empty", nameof(query));
+        }
+
+        if (limit <= 0) {
+            throw new ArgumentOutOfRangeException(nameof(limit), "limit must be positive");
+        }
+
+        var results = keyword
+            ? repository.SearchKeywords(query, limit)
+            : await SearchSemanticAsync(query, limit, cancellationToken);
 
         PrintResults(results);
         return 0;
@@ -27,17 +41,11 @@ internal sealed partial class SearchService(ModRepository repository, EmbeddingC
         var config = RimdexConfig.Load();
         repository.EnsureSearchIndex(config.Model);
         var queryVectors = await client.FetchAsync([query], config, cancellationToken);
-        var normalizedQuery = EmbeddingVector.Normalize(queryVectors[0]);
-        return repository.SearchSemantic(
-            config.Model,
-            EmbeddingVector.ToBlob(normalizedQuery),
-            limit);
+        return repository.SearchSemantic(config.Model, EmbeddingVector.ToBlob(queryVectors[0]), limit);
     }
 
     public static SearchService Create() {
-        return new SearchService(
-            new ModRepository(AppPaths.DatabasePath),
-            new EmbeddingClient(new HttpClient()));
+        return new SearchService(new ModRepository(AppPaths.DatabasePath), new EmbeddingClient(new HttpClient()));
     }
 
     private static void PrintResults(IReadOnlyList<SearchResultRow> results) {
@@ -51,7 +59,7 @@ internal sealed partial class SearchService(ModRepository repository, EmbeddingC
                 result.Views))
             .ToArray();
 
-        Console.WriteLine(JsonSerializer.Serialize(dto, RimdexIndentedJsonContext.Console.SearchResultDtoArray));
+        Console.WriteLine(JsonSerializer.Serialize(dto, RimdexJsonContext.Indented.SearchResultDtoArray));
     }
 
     private static string Summarize(string value) {

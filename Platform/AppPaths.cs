@@ -1,7 +1,7 @@
 namespace Rimdex.Platform;
 
 internal static class AppPaths {
-    private static string Root => Path.Combine(
+    private static readonly string Root = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rimdex");
 
     public static readonly string ConfigPath = Path.Combine(Root, "config.json");

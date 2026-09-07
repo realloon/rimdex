@@ -1,48 +1,39 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.Sqlite;
-using Rimdex.Embedding;
 using Rimdex.Models;
 
 namespace Rimdex.Data;
 
+internal readonly record struct DbStats(long Mods, long Embeddings);
+
+internal sealed record PendingEmbeddingRow(int ModId, string SearchText, string SearchTextHash);
+
+internal sealed record ModEmbedding(int ModId, string SearchTextHash, byte[] Embedding, int Dimension);
+
+internal sealed record SearchResultRow(
+    string PublishedFileId,
+    string Title,
+    string Description,
+    string PreviewUrl,
+    long Subscriptions,
+    long Views);
+
 internal sealed class ModRepository(string dbPath) {
     public void Import(IReadOnlyList<ModDetail> mods) {
-        EnsureDbDirectory();
-
         using var connection = OpenConnection();
-        CreateSchema(connection);
-
         using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
                               insert into mods (
-                                publishedfileid,
-                                title,
-                                description,
-                                tags_json,
-                                preview_url,
-                                subscriptions,
-                                favorited,
-                                views,
-                                time_created,
-                                time_updated,
-                                crawled_at,
-                                raw_json,
-                                search_text
+                                publishedfileid, title, description, tags_json, preview_url,
+                                subscriptions, favorited, views, time_created, time_updated,
+                                crawled_at, raw_json, search_text
                               ) values (
-                                $publishedfileid,
-                                $title,
-                                $description,
-                                $tags_json,
-                                $preview_url,
-                                $subscriptions,
-                                $favorited,
-                                $views,
-                                $time_created,
-                                $time_updated,
-                                $crawled_at,
-                                $raw_json,
-                                $search_text
+                                $publishedfileid, $title, $description, $tags_json, $preview_url,
+                                $subscriptions, $favorited, $views, $time_created, $time_updated,
+                                $crawled_at, $raw_json, $search_text
                               )
                               on conflict(publishedfileid) do update set
                                 title = excluded.title,
@@ -59,22 +50,34 @@ internal sealed class ModRepository(string dbPath) {
                                 search_text = excluded.search_text
                               """;
 
-        AddParameters(command);
+        var pId = command.Parameters.Add("$publishedfileid", SqliteType.Text);
+        var pTitle = command.Parameters.Add("$title", SqliteType.Text);
+        var pDesc = command.Parameters.Add("$description", SqliteType.Text);
+        var pTags = command.Parameters.Add("$tags_json", SqliteType.Text);
+        var pPrev = command.Parameters.Add("$preview_url", SqliteType.Text);
+        var pSubs = command.Parameters.Add("$subscriptions", SqliteType.Integer);
+        var pFav = command.Parameters.Add("$favorited", SqliteType.Integer);
+        var pViews = command.Parameters.Add("$views", SqliteType.Integer);
+        var pCreated = command.Parameters.Add("$time_created", SqliteType.Integer);
+        var pUpdated = command.Parameters.Add("$time_updated", SqliteType.Integer);
+        var pCrawled = command.Parameters.Add("$crawled_at", SqliteType.Text);
+        var pRaw = command.Parameters.Add("$raw_json", SqliteType.Text);
+        var pSearch = command.Parameters.Add("$search_text", SqliteType.Text);
 
         foreach (var mod in mods) {
-            command.Parameters["$publishedfileid"].Value = mod.PublishedFileId;
-            command.Parameters["$title"].Value = mod.Title;
-            command.Parameters["$description"].Value = mod.Description;
-            command.Parameters["$tags_json"].Value = mod.TagsJson;
-            command.Parameters["$preview_url"].Value = mod.PreviewUrl;
-            command.Parameters["$subscriptions"].Value = mod.Subscriptions;
-            command.Parameters["$favorited"].Value = mod.Favorited;
-            command.Parameters["$views"].Value = mod.Views;
-            command.Parameters["$time_created"].Value = mod.TimeCreated;
-            command.Parameters["$time_updated"].Value = mod.TimeUpdated;
-            command.Parameters["$crawled_at"].Value = mod.CrawledAt;
-            command.Parameters["$raw_json"].Value = mod.RawJson;
-            command.Parameters["$search_text"].Value = mod.SearchText;
+            pId.Value = mod.PublishedFileId;
+            pTitle.Value = mod.Title;
+            pDesc.Value = mod.Description;
+            pTags.Value = mod.TagsJson;
+            pPrev.Value = mod.PreviewUrl;
+            pSubs.Value = mod.Subscriptions;
+            pFav.Value = mod.Favorited;
+            pViews.Value = mod.Views;
+            pCreated.Value = mod.TimeCreated;
+            pUpdated.Value = mod.TimeUpdated;
+            pCrawled.Value = mod.CrawledAt;
+            pRaw.Value = mod.RawJson;
+            pSearch.Value = mod.SearchText;
             command.ExecuteNonQuery();
         }
 
@@ -82,33 +85,18 @@ internal sealed class ModRepository(string dbPath) {
     }
 
     public DbStats ReadStats() {
-        EnsureDbDirectory();
-
         using var connection = OpenConnection();
-        CreateSchema(connection);
-
-        return new DbStats(
-            Count(connection, "mods"),
-            TableExists(connection, "mod_embeddings") ? Count(connection, "mod_embeddings") : 0);
+        return new DbStats(Count(connection, "mods"), Count(connection, "mod_embeddings"));
     }
 
     public long ReadMaxUpdatedTime() {
-        EnsureDbDirectory();
-
         using var connection = OpenConnection();
-        CreateSchema(connection);
-
         var value = ExecuteScalar(connection, "select max(time_updated) from mods");
         return value is null or DBNull ? 0 : (long)value;
     }
 
     public IReadOnlyList<PendingEmbeddingRow> ReadPendingEmbeddingRows(int limit, string model) {
-        EnsureDbDirectory();
-
         using var connection = OpenConnection();
-        CreateSchema(connection);
-        CreateEmbeddingSchema(connection);
-
         using var command = connection.CreateCommand();
         command.CommandText = """
                               select
@@ -125,7 +113,7 @@ internal sealed class ModRepository(string dbPath) {
         var rows = new List<PendingEmbeddingRow>(limit);
         while (reader.Read() && rows.Count < limit) {
             var searchText = reader.GetString(1);
-            var hash = SearchTextHash.Compute(searchText);
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(searchText)));
             var storedModel = reader.IsDBNull(2) ? null : reader.GetString(2);
             var storedHash = reader.IsDBNull(3) ? null : reader.GetString(3);
 
@@ -144,11 +132,7 @@ internal sealed class ModRepository(string dbPath) {
             return;
         }
 
-        EnsureDbDirectory();
-
         using var connection = OpenConnection();
-        CreateSchema(connection);
-        CreateEmbeddingSchema(connection);
         ValidateEmbeddingDimension(connection, model, embeddings[0].Dimension);
         CreateVectorSchema(connection, model, embeddings[0].Dimension);
 
@@ -175,16 +159,16 @@ internal sealed class ModRepository(string dbPath) {
                                 search_text_hash = excluded.search_text_hash,
                                 embedded_at = excluded.embedded_at
                               """;
-        command.Parameters.Add("$mod_id", SqliteType.Integer);
-        command.Parameters.Add("$model", SqliteType.Text);
-        command.Parameters.Add("$dimension", SqliteType.Integer);
-        command.Parameters.Add("$search_text_hash", SqliteType.Text);
-        command.Parameters.Add("$embedded_at", SqliteType.Text);
+        var pModId = command.Parameters.Add("$mod_id", SqliteType.Integer);
+        var pModel = command.Parameters.Add("$model", SqliteType.Text);
+        var pDim = command.Parameters.Add("$dimension", SqliteType.Integer);
+        var pHash = command.Parameters.Add("$search_text_hash", SqliteType.Text);
+        var pAt = command.Parameters.Add("$embedded_at", SqliteType.Text);
 
         using var vectorDeleteCommand = connection.CreateCommand();
         vectorDeleteCommand.Transaction = transaction;
         vectorDeleteCommand.CommandText = "delete from mod_embedding_vectors where rowid = $mod_id";
-        vectorDeleteCommand.Parameters.Add("$mod_id", SqliteType.Integer);
+        var pDelId = vectorDeleteCommand.Parameters.Add("$mod_id", SqliteType.Integer);
 
         using var vectorInsertCommand = connection.CreateCommand();
         vectorInsertCommand.Transaction = transaction;
@@ -192,8 +176,8 @@ internal sealed class ModRepository(string dbPath) {
                                           insert into mod_embedding_vectors(rowid, embedding)
                                           values ($mod_id, $embedding)
                                           """;
-        vectorInsertCommand.Parameters.Add("$mod_id", SqliteType.Integer);
-        vectorInsertCommand.Parameters.Add("$embedding", SqliteType.Blob);
+        var pInsId = vectorInsertCommand.Parameters.Add("$mod_id", SqliteType.Integer);
+        var pInsEmb = vectorInsertCommand.Parameters.Add("$embedding", SqliteType.Blob);
 
         var embeddedAt = DateTimeOffset.UtcNow.ToString("O");
         foreach (var embedding in embeddings) {
@@ -201,18 +185,18 @@ internal sealed class ModRepository(string dbPath) {
                 throw new InvalidDataException("Embedding API returned inconsistent vector dimensions");
             }
 
-            command.Parameters["$mod_id"].Value = embedding.ModId;
-            command.Parameters["$model"].Value = model;
-            command.Parameters["$dimension"].Value = embedding.Dimension;
-            command.Parameters["$search_text_hash"].Value = embedding.SearchTextHash;
-            command.Parameters["$embedded_at"].Value = embeddedAt;
+            pModId.Value = embedding.ModId;
+            pModel.Value = model;
+            pDim.Value = embedding.Dimension;
+            pHash.Value = embedding.SearchTextHash;
+            pAt.Value = embeddedAt;
             command.ExecuteNonQuery();
 
-            vectorDeleteCommand.Parameters["$mod_id"].Value = embedding.ModId;
+            pDelId.Value = embedding.ModId;
             vectorDeleteCommand.ExecuteNonQuery();
 
-            vectorInsertCommand.Parameters["$mod_id"].Value = embedding.ModId;
-            vectorInsertCommand.Parameters["$embedding"].Value = embedding.Embedding;
+            pInsId.Value = embedding.ModId;
+            pInsEmb.Value = embedding.Embedding;
             vectorInsertCommand.ExecuteNonQuery();
         }
 
@@ -220,21 +204,12 @@ internal sealed class ModRepository(string dbPath) {
     }
 
     public void EnsureSearchIndex(string model) {
-        EnsureDbDirectory();
-
         using var connection = OpenConnection();
-        CreateSchema(connection);
-        CreateEmbeddingSchema(connection);
         EnsureVectorIndex(connection, model);
     }
 
     public IReadOnlyList<SearchResultRow> SearchSemantic(string model, byte[] queryEmbedding, int limit) {
-        EnsureDbDirectory();
-
         using var connection = OpenConnection();
-        CreateSchema(connection);
-        CreateEmbeddingSchema(connection);
-
         using var command = connection.CreateCommand();
         command.CommandText = """
                               with eligible as (
@@ -276,10 +251,7 @@ internal sealed class ModRepository(string dbPath) {
     }
 
     public IReadOnlyList<SearchResultRow> SearchKeywords(string query, int limit) {
-        EnsureDbDirectory();
-
         using var connection = OpenConnection();
-        CreateSchema(connection);
         CreateKeywordSearchSchema(connection);
 
         using var command = connection.CreateCommand();
@@ -294,11 +266,11 @@ internal sealed class ModRepository(string dbPath) {
                               from mod_search
                               join mods on mods.id = mod_search.rowid
                               where mod_search match $query
-                                and not exists (
-                                  select 1
-                                  from json_each(mods.tags_json)
-                                  where json_each.value = 'Translation'
-                                )
+                                  and not exists (
+                                    select 1
+                                    from json_each(mods.tags_json)
+                                    where json_each.value = 'Translation'
+                                  )
                               order by bm25(mod_search, 10.0, 1.0), mods.id
                               limit $limit
                               """;
@@ -324,22 +296,18 @@ internal sealed class ModRepository(string dbPath) {
         return rows;
     }
 
-    private static string BuildKeywordQuery(string query) {
-        return string.Join(" AND ", query
+    private static string BuildKeywordQuery(string query) =>
+        string.Join(" AND ", query
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
             .Select(term => $"\"{term.Replace("\"", "\"\"")}\""));
-    }
 
     private SqliteConnection OpenConnection() {
-        var builder = new SqliteConnectionStringBuilder {
-            DataSource = dbPath
-        };
-        var connection = new SqliteConnection(builder.ToString());
-
+        EnsureDbDirectory();
+        var connection = new SqliteConnection($"Data Source={dbPath}");
         connection.Open();
         SqliteVec.Register(connection);
-        Execute(connection, "pragma journal_mode = wal");
-        Execute(connection, "pragma foreign_keys = on");
+        Execute(connection, "pragma journal_mode = wal; pragma foreign_keys = on;");
+        CreateSchema(connection);
         return connection;
     }
 
@@ -360,82 +328,65 @@ internal sealed class ModRepository(string dbPath) {
                               crawled_at text not null,
                               raw_json text not null,
                               search_text text not null
-                            )
-                            """);
-        Execute(connection, "create index if not exists mods_time_updated_idx on mods(time_updated)");
-        Execute(connection, "create index if not exists mods_subscriptions_idx on mods(subscriptions)");
-    }
-
-    private static void CreateEmbeddingSchema(SqliteConnection connection) {
-        Execute(connection, """
+                            );
+                            create index if not exists mods_time_updated_idx on mods(time_updated);
+                            create index if not exists mods_subscriptions_idx on mods(subscriptions);
                             create table if not exists mod_embeddings (
                               mod_id integer primary key references mods(id) on delete cascade,
                               model text not null,
                               dimension integer not null,
                               search_text_hash text not null,
                               embedded_at text not null
-                            )
-                            """);
-        Execute(connection, "create index if not exists mod_embeddings_model_idx on mod_embeddings(model)");
-        Execute(connection, """
+                            );
+                            create index if not exists mod_embeddings_model_idx on mod_embeddings(model);
                             create table if not exists mod_embedding_vector_metadata (
                               key text primary key,
                               value text not null
-                            )
+                            );
                             """);
     }
 
     private static void CreateKeywordSearchSchema(SqliteConnection connection) {
-        var rebuild = !TableExists(connection, "mod_search");
-        using var transaction = connection.BeginTransaction();
+        if (TableExists(connection, "mod_search")) {
+            return;
+        }
 
+        using var transaction = connection.BeginTransaction();
         Execute(connection, """
                             create virtual table if not exists mod_search using fts5(
                               title,
                               description,
                               content = 'mods',
                               content_rowid = 'id'
-                            )
-                            """, transaction);
-        Execute(connection, """
+                            );
                             create trigger if not exists mods_search_after_insert after insert on mods begin
                               insert into mod_search(rowid, title, description)
                               values (new.id, new.title, new.description);
-                            end
-                            """, transaction);
-        Execute(connection, """
+                            end;
                             create trigger if not exists mods_search_after_update after update of title, description on mods begin
                               insert into mod_search(mod_search, rowid, title, description)
                               values ('delete', old.id, old.title, old.description);
                               insert into mod_search(rowid, title, description)
                               values (new.id, new.title, new.description);
-                            end
-                            """, transaction);
-        Execute(connection, """
+                            end;
                             create trigger if not exists mods_search_after_delete after delete on mods begin
                               insert into mod_search(mod_search, rowid, title, description)
                               values ('delete', old.id, old.title, old.description);
-                            end
+                            end;
+                            insert into mod_search(mod_search) values ('rebuild');
                             """, transaction);
-
-        if (rebuild) {
-            Execute(connection, "insert into mod_search(mod_search) values ('rebuild')", transaction);
-        }
-
         transaction.Commit();
     }
 
     private static void EnsureVectorIndex(SqliteConnection connection, string model) {
-        var dimension = ReadStoredEmbeddingDimension(connection, model);
-        if (dimension is null) {
-            throw new InvalidOperationException($"No embeddings found for model: {model}");
-        }
+        var dimension = ReadStoredEmbeddingDimension(connection, model)
+                        ?? throw new InvalidOperationException($"No embeddings found for model: {model}");
 
         if (!TableExists(connection, "mod_embedding_vectors")) {
             throw new InvalidOperationException("Missing vector index. Run rimdex embed.");
         }
 
-        ValidateVectorMetadata(connection, model, dimension.Value);
+        ValidateVectorMetadata(connection, model, dimension);
 
         var metadataRows = Count(connection, "mod_embeddings", "model", model);
         var vectorRows = Count(connection, "mod_embedding_vectors");
@@ -477,12 +428,7 @@ internal sealed class ModRepository(string dbPath) {
 
     private static int? ReadStoredEmbeddingDimension(SqliteConnection connection, string model) {
         using var command = connection.CreateCommand();
-        command.CommandText = """
-                              select dimension
-                              from mod_embeddings
-                              where model = $model
-                              limit 1
-                              """;
+        command.CommandText = "select dimension from mod_embeddings where model = $model limit 1";
         command.Parameters.AddWithValue("$model", model);
         var result = command.ExecuteScalar();
         return result is null ? null : (int)(long)result;
@@ -490,11 +436,7 @@ internal sealed class ModRepository(string dbPath) {
 
     private static string ReadVectorMetadata(SqliteConnection connection, string key) {
         using var command = connection.CreateCommand();
-        command.CommandText = """
-                              select value
-                              from mod_embedding_vector_metadata
-                              where key = $key
-                              """;
+        command.CommandText = "select value from mod_embedding_vector_metadata where key = $key";
         command.Parameters.AddWithValue("$key", key);
         return (string?)command.ExecuteScalar()
                ?? throw new InvalidDataException($"Missing vector index metadata: {key}");
@@ -512,52 +454,22 @@ internal sealed class ModRepository(string dbPath) {
     }
 
     private static void ValidateEmbeddingDimension(SqliteConnection connection, string model, int dimension) {
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-                              select dimension
-                              from mod_embeddings
-                              where model = $model
-                              limit 1
-                              """;
-        command.Parameters.AddWithValue("$model", model);
-        var existing = command.ExecuteScalar();
-
-        if (existing is null) {
-            return;
-        }
-
-        if ((long)existing != dimension) {
+        var existing = ReadStoredEmbeddingDimension(connection, model);
+        if (existing is not null && existing.Value != dimension) {
             throw new InvalidDataException(
                 $"Embedding dimension {dimension} does not match stored dimension {existing}");
         }
     }
 
-    private static void AddParameters(SqliteCommand command) {
-        command.Parameters.Add("$publishedfileid", SqliteType.Text);
-        command.Parameters.Add("$title", SqliteType.Text);
-        command.Parameters.Add("$description", SqliteType.Text);
-        command.Parameters.Add("$tags_json", SqliteType.Text);
-        command.Parameters.Add("$preview_url", SqliteType.Text);
-        command.Parameters.Add("$subscriptions", SqliteType.Integer);
-        command.Parameters.Add("$favorited", SqliteType.Integer);
-        command.Parameters.Add("$views", SqliteType.Integer);
-        command.Parameters.Add("$time_created", SqliteType.Integer);
-        command.Parameters.Add("$time_updated", SqliteType.Integer);
-        command.Parameters.Add("$crawled_at", SqliteType.Text);
-        command.Parameters.Add("$raw_json", SqliteType.Text);
-        command.Parameters.Add("$search_text", SqliteType.Text);
-    }
-
-    private static long Count(SqliteConnection connection, string table) {
+    private static long Count(SqliteConnection connection, string table, string? column = null, string? value = null) {
         using var command = connection.CreateCommand();
-        command.CommandText = $"select count(*) from {table}";
-        return (long)command.ExecuteScalar()!;
-    }
+        command.CommandText = column is null
+            ? $"select count(*) from {table}"
+            : $"select count(*) from {table} where {column} = $value";
+        if (column is not null) {
+            command.Parameters.AddWithValue("$value", value);
+        }
 
-    private static long Count(SqliteConnection connection, string table, string column, string value) {
-        using var command = connection.CreateCommand();
-        command.CommandText = $"select count(*) from {table} where {column} = $value";
-        command.Parameters.AddWithValue("$value", value);
         return (long)command.ExecuteScalar()!;
     }
 
@@ -572,10 +484,7 @@ internal sealed class ModRepository(string dbPath) {
         return (long)command.ExecuteScalar()! > 0;
     }
 
-    private static void Execute(
-        SqliteConnection connection,
-        string sql,
-        SqliteTransaction? transaction = null) {
+    private static void Execute(SqliteConnection connection, string sql, SqliteTransaction? transaction = null) {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;

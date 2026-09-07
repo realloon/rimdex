@@ -6,6 +6,12 @@ using Rimdex.Serialization;
 
 namespace Rimdex.Embedding;
 
+internal sealed record EmbeddingRequest(string Model, string[] Input);
+
+internal sealed record EmbeddingResponse(EmbeddingResponseItem[]? Data);
+
+internal sealed record EmbeddingResponseItem(int? Index, float[]? Embedding);
+
 internal sealed class EmbeddingClient(HttpClient httpClient) {
     public async Task<float[][]> FetchAsync(IReadOnlyList<string> input, RimdexConfig config,
         CancellationToken cancellationToken) {
@@ -15,7 +21,7 @@ internal sealed class EmbeddingClient(HttpClient httpClient) {
 
         var url = new Uri(config.BaseUri, "embeddings");
         var body = JsonSerializer.Serialize(
-            new EmbeddingRequest(config.Model, input.ToArray()),
+            new EmbeddingRequest(config.Model, [.. input]),
             RimdexJsonContext.Default.EmbeddingRequest);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
@@ -68,9 +74,9 @@ internal sealed class EmbeddingClient(HttpClient httpClient) {
             vectors[index] = item.Embedding;
         }
 
-        return vectors
-            .Select(vector =>
+        return [
+            .. vectors.Select(vector =>
                 vector ?? throw new InvalidDataException("Embedding API response is missing one or more indexes"))
-            .ToArray();
+        ];
     }
 }
