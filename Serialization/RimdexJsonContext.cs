@@ -12,7 +12,6 @@ namespace Rimdex.Serialization;
 [JsonSerializable(typeof(EmbeddingResponse))]
 [JsonSerializable(typeof(RimdexConfig))]
 [JsonSerializable(typeof(SearchResultDto[]))]
-[JsonSerializable(typeof(string[]))]
 internal sealed partial class RimdexJsonContext : JsonSerializerContext {
     public static RimdexJsonContext Indented { get; } = new(new JsonSerializerOptions {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,

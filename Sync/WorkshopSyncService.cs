@@ -1,9 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Rimdex.Data;
 using Rimdex.Models;
 using Rimdex.Platform;
-using Rimdex.Serialization;
 
 namespace Rimdex.Sync;
 
@@ -28,7 +28,8 @@ internal sealed partial class SteamWorkshopClient(HttpClient httpClient) {
 
         using var response = await FetchWithRetryAsync(
             () => httpClient.GetAsync(url, cancellationToken),
-            $"browse page {page}");
+            $"browse page {page}",
+            cancellationToken);
         var html = await response.Content.ReadAsStringAsync(cancellationToken);
         var ids = ItemLinkPattern()
             .Matches(html)
@@ -62,7 +63,8 @@ internal sealed partial class SteamWorkshopClient(HttpClient httpClient) {
                     new FormUrlEncodedContent(form),
                     cancellationToken);
             },
-            $"details batch {ids[0]}..{ids[^1]}");
+            $"details batch {ids[0]}..{ids[^1]}",
+            cancellationToken);
         var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(rawJson);
         var details = document.RootElement
@@ -73,39 +75,60 @@ internal sealed partial class SteamWorkshopClient(HttpClient httpClient) {
             throw new InvalidDataException("Steam details response is missing publishedfiledetails");
         }
 
-        var crawledAt = DateTimeOffset.UtcNow.ToString("O");
-        var byId = details.EnumerateArray()
-            .Select(detail => ReadModDetail(detail, crawledAt))
-            .ToDictionary(mod => mod.PublishedFileId);
+        var results = new List<ModDetail>();
+        foreach (var detail in details.EnumerateArray()) {
+            if (TryReadModDetail(detail, out var mod)) {
+                results.Add(mod);
+            }
+        }
 
-        return byId.Count == ids.Count
-            ? ids.Select(id => byId[id]).ToArray()
-            : throw new InvalidDataException($"Steam details response returned {byId.Count} items for {ids.Count} ids");
+        return results;
     }
 
-    private static ModDetail ReadModDetail(JsonElement detail, string crawledAt) {
-        var tags = detail.GetProperty("tags").EnumerateArray()
-            .Select(tag => tag.GetProperty("tag").GetString()!)
-            .ToArray();
+    private static bool TryReadModDetail(JsonElement detail, [NotNullWhen(true)] out ModDetail? mod) {
+        mod = null;
+        if (!detail.TryGetProperty("result", out var res) || res.GetInt32() != 1) {
+            return false;
+        }
 
-        return new ModDetail(
-            detail.GetProperty("publishedfileid").GetString()!,
-            detail.GetProperty("title").GetString()!,
-            detail.GetProperty("description").GetString()!,
-            JsonSerializer.Serialize(tags, RimdexJsonContext.Default.StringArray),
-            detail.GetProperty("preview_url").GetString()!,
-            detail.GetProperty("subscriptions").GetInt64(),
-            detail.GetProperty("favorited").GetInt64(),
-            detail.GetProperty("views").GetInt64(),
-            detail.GetProperty("time_created").GetInt64(),
-            detail.GetProperty("time_updated").GetInt64(),
-            crawledAt,
-            detail.GetRawText());
+        if (!detail.TryGetProperty("publishedfileid", out var pId) ||
+            !detail.TryGetProperty("title", out var pTitle) ||
+            !detail.TryGetProperty("description", out var pDesc)) {
+            return false;
+        }
+
+        var isTranslation = false;
+        if (detail.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array) {
+            foreach (var tag in tags.EnumerateArray()) {
+                if (tag.TryGetProperty("tag", out var name) &&
+                    string.Equals(name.GetString(), "Translation", StringComparison.OrdinalIgnoreCase)) {
+                    isTranslation = true;
+                    break;
+                }
+            }
+        }
+
+        var previewUrl = detail.TryGetProperty("preview_url", out var pPrev) ? pPrev.GetString() ?? "" : "";
+        var subscriptions = detail.TryGetProperty("subscriptions", out var pSubs) ? pSubs.GetInt64() : 0;
+        var views = detail.TryGetProperty("views", out var pViews) ? pViews.GetInt64() : 0;
+        var timeUpdated = detail.TryGetProperty("time_updated", out var pUpd) ? pUpd.GetInt64() : 0;
+
+        mod = new ModDetail(
+            pId.GetString()!,
+            pTitle.GetString()!,
+            pDesc.GetString()!,
+            previewUrl,
+            subscriptions,
+            views,
+            timeUpdated,
+            isTranslation);
+        return true;
     }
 
     private static async Task<HttpResponseMessage> FetchWithRetryAsync(
         Func<Task<HttpResponseMessage>> fetch,
-        string context) {
+        string context,
+        CancellationToken cancellationToken) {
         Exception? lastError = null;
 
         for (var attempt = 1; attempt <= 3; attempt++) {
@@ -121,7 +144,7 @@ internal sealed partial class SteamWorkshopClient(HttpClient httpClient) {
             } catch (Exception ex) when (attempt < 3 && ex is not OperationCanceledException) {
                 lastError = ex;
                 Console.WriteLine($"{context} failed attempt={attempt}/3; retrying");
-                await Task.Delay(TimeSpan.FromSeconds(attempt));
+                await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
             }
         }
 
@@ -134,7 +157,7 @@ internal sealed partial class SteamWorkshopClient(HttpClient httpClient) {
             throw new InvalidDataException($"Steam browse page is missing {key}");
         }
 
-        var match = NumberPattern().Match(html[start..]);
+        var match = NumberPattern().Match(html, start);
 
         return match.Success
             ? int.Parse(match.Groups[1].Value)
@@ -197,6 +220,10 @@ internal sealed class WorkshopSyncService(ModRepository repository, SteamWorksho
             }
 
             var details = await client.FetchDetailsAsync(ids, cancellationToken);
+            if (details.Count == 0) {
+                continue;
+            }
+
             repository.Import(details);
             synced += details.Count;
             var pageMaxUpdated = details.Max(detail => detail.TimeUpdated);
@@ -216,8 +243,7 @@ internal sealed class WorkshopSyncService(ModRepository repository, SteamWorksho
     private async Task SyncDetailsAsync(IReadOnlyList<string> ids, CancellationToken cancellationToken) {
         var synced = 0;
 
-        for (var index = 0; index < ids.Count; index += DetailsBatchSize) {
-            var batch = ids.Skip(index).Take(DetailsBatchSize).ToArray();
+        foreach (var batch in ids.Chunk(DetailsBatchSize)) {
             var details = await client.FetchDetailsAsync(batch, cancellationToken);
             repository.Import(details);
             synced += details.Count;

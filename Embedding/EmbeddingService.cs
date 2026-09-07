@@ -52,8 +52,7 @@ internal sealed class EmbeddingService(ModRepository repository, EmbeddingClient
         }
 
         var embedded = 0;
-        for (var index = 0; index < pending.Count; index += batchSize) {
-            var batch = pending.Skip(index).Take(batchSize).ToArray();
+        foreach (var batch in pending.Chunk(batchSize)) {
             var vectors = await client.FetchAsync([.. batch.Select(row => row.SearchText)], config, cancellationToken);
             var embeddings = vectors.Select((t, i) => new ModEmbedding(
                 batch[i].ModId,
