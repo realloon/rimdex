@@ -305,7 +305,6 @@ internal sealed class ModRepository(string dbPath) {
         EnsureDbDirectory();
         var connection = new SqliteConnection($"Data Source={dbPath}");
         connection.Open();
-        SqliteVec.Register(connection);
         Execute(connection, "pragma journal_mode = wal; pragma foreign_keys = on;");
         CreateSchema(connection);
         return connection;
