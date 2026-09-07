@@ -6,37 +6,23 @@ Search engine for RimWorld Workshop mods.
 
 ## Install
 
-### Download
-
-Download the latest rimdex release from [Releases](https://github.com/realloon/rimdex/releases).
-
-- Windows: `rimdex-win-x64.zip`
-- macOS (Apple silicon): `rimdex-osx-arm64.zip`
-
-### Add it to your path
-
-- Windows: `mkdir %USERPROFILE%\.local\bin`
-- macOS: `mkdir ~/.local/bin`
-
-Skip this step if the directory already exists.
-
-Move the extracted `rimdex` executable into that directory. On macOS, also run:
+### macOS & Linux
 
 ```sh
-chmod +x ~/.local/bin/rimdex
+curl -fsSL https://raw.githubusercontent.com/realloon/rimdex/main/install.sh | sh
 ```
 
-Add `%USERPROFILE%\.local\bin` to `PATH` on Windows.
+### Windows
 
-On macOS, add this line to `~/.zshrc`:
+Run in PowerShell:
 
-```sh
-export PATH="$HOME/.local/bin:$PATH"
+```powershell
+irm https://raw.githubusercontent.com/realloon/rimdex/main/install.ps1 | iex
 ```
 
-### Check the installation
+### Manual
 
-Run `rimdex --version`. If it prints a version number, installation is complete.
+Download the latest release binary from [Releases](https://github.com/realloon/rimdex/releases) and place it into your `PATH` (e.g. `~/.local/bin` or `%USERPROFILE%\.local\bin`).
 
 ## Configure rimdex
 
