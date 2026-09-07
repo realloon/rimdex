@@ -2,7 +2,20 @@
 
 Search engine for RimWorld Workshop mods.
 
-![](https://oss-1259210922.cos.ap-nanjing.myqcloud.com/rimdex-demo.avif)
+```text
+┌───────────────────────────────────────────────────────┐
+│ $ rimdex search "storage limit"                       │
+│ [                                                     │
+│   {                                                   │
+│     "title": "Storage Item Limiter",                  │
+│     "url": "https://steamcommunity.com/shared...",    │
+│     "summary": "Enables storage units to have...",    │
+│     "subscriptions": 727,                             │
+│     "views": 2686                                     │
+│   }                                                   │
+│ ]                                                     │
+└───────────────────────────────────────────────────────┘
+```
 
 ## Install
 
@@ -22,7 +35,7 @@ irm https://raw.githubusercontent.com/realloon/rimdex/main/install.ps1 | iex
 
 ### Manual
 
-Download the latest release binary from [Releases](https://github.com/realloon/rimdex/releases) and place it into your `PATH` (e.g. `~/.local/bin` or `%USERPROFILE%\.local\bin`).
+Download the latest release binary from [Releases](https://github.com/realloon/rimdex/releases) and place it into your `PATH` (e.g. `~/.local/bin`).
 
 ## Configure rimdex
 
@@ -40,5 +53,5 @@ rimdex config set \
 ```sh
 git clone https://github.com/realloon/rimdex.git
 cd rimdex
-dotnet publish -c Release
+dotnet publish
 ```
